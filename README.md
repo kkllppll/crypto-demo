@@ -1,81 +1,88 @@
 # crypto-demo
 
-End-to-end batch + streaming ingestion into a governed Unity Catalog bronze/silver layer, with a live schema-evolution demo. Built for the Labs 1-3 team checkpoint.
+Team project for the Databricks/Azure Data Engineering course: a batch + streaming pipeline for crypto prices (BTC, ETH, SOL), merged into one silver table and shown on a dashboard.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    CG[CoinGecko API] -->|poll| P[01: producer]
-    P --> EH[(Event Hub<br/>evhua5816bd)]
-    EH --> C[02: consumer]
-    C --> BT[(team_crypto_bronze.ticks_stream)]
-    BT --> S[04: silver]
-    S --> ST[(team_crypto_silver.ticks_prices)]
+    subgraph Sources
+        A1[Kraken API<br/>hourly OHLC]
+        A2[CoinGecko API<br/>live price ticks]
+    end
 
-    K[Kraken API] --> B[batch_ingestion]
-    B --> BB[(team_crypto_bronze.ohlc_batch)]
-    BB --> SB[02_silver_ohlc]
-    SB --> SO[(team_crypto_silver.ohlc_prices)]
+    subgraph Batch["Batch pipeline"]
+        B1[01_batch_ohlc_ingestion]
+        B2[02_silver_ohlc]
+    end
 
-    ST --> UV[05: prices_unified view]
-    SO --> UV
-    UV --> DB[Databricks SQL Dashboard]
+    subgraph Streaming["Streaming pipeline"]
+        S1[01_producer_price_ticks]
+        S2["Event Hub<br/>(Kafka protocol)"]
+        S3[02_consumer_bronze_ticks]
+        S4[04_silver_prices]
+    end
+
+    subgraph Bronze["team_crypto_bronze"]
+        BR1[(ohlc_batch)]
+        BR2[(ticks_stream)]
+    end
+
+    subgraph Silver["team_crypto_silver"]
+        SV1[(ohlc_prices)]
+        SV2[(ticks_prices)]
+        SV3[(unified_prices)]
+    end
+
+    subgraph Integration["Integration pipeline"]
+        I1[01_unified_silver_prices]
+    end
+
+    A1 --> B1 --> BR1 --> B2 --> SV1
+    A2 --> S1 --> S2 --> S3 --> BR2 --> S4 --> SV2
+
+    SV1 --> I1
+    SV2 --> I1
+    I1 --> SV3
+    SV3 --> D[Databricks SQL Dashboard]
 ```
 
-Catalog: `dbr_dev_ua5816bd`. Schemas: `team_crypto_bronze`, `team_crypto_silver`.
+Batch and streaming run independently and each writes its own silver table (`ohlc_prices`, `ticks_prices`). The `integration_pipeline` combines both into one table, `unified_prices`, which feeds the dashboard.
 
 ## Repo structure
 
-| File | Owner | Purpose |
-|---|---|---|
-| `infra_setup.ipynb` | Infra | Catalog/schema/volume, external location, secret scope |
-| `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Batch | Historical OHLC (Kraken) → `team_crypto_bronze.ohlc_batch`, idempotent merge |
-| `batch_pipeline/02_silver_ohlc.ipynb` | Batch | Cleans/dedupes OHLC → `team_crypto_silver.ohlc_prices` |
-| `streaming_pipeline/01_producer_price_ticks.ipynb` | Streaming | Polls CoinGecko, sends events to Event Hub |
-| `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | Streaming | Kafka-protocol consumer → `team_crypto_bronze.ticks_stream` |
-| `streaming_pipeline/03_schema_evolution_twist.ipynb` | Streaming | Demo: new field added mid-stream, no restart |
-| `streaming_pipeline/04_silver_prices.ipynb` | Streaming | Schema-inferred parse + normalize symbols → `team_crypto_silver.ticks_prices` |
-| `streaming_pipeline/05_unified_prices_view.ipynb` | Streaming | `prices_unified` view combining batch + streaming for the dashboard |
-| `dashboard/` | Analytics | Databricks SQL dashboard definition/notes |
+| Folder / file | What it does |
+|---|---|
+| `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`, idempotent MERGE on `symbol, timestamp_unix` |
+| `batch_pipeline/02_silver_ohlc.ipynb` | Casts types, normalizes symbol, dedups, MERGE into `team_crypto_silver.ohlc_prices` |
+| `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol |
+| `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | Structured Streaming from Event Hub (Kafka format) into `team_crypto_bronze.ticks_stream`, stored as raw JSON (no fixed schema — needed for the schema evolution demo) |
+| `streaming_pipeline/03_schema_evolution_twist.ipynb` | Demo helper: checks that a new field reaches silver without restarting the stream |
+| `streaming_pipeline/04_silver_prices.ipynb` | Infers schema from the newest bronze row (`F.schema_of_json`), normalizes symbol (bitcoin → BTC etc.), MERGE into `team_crypto_silver.ticks_prices` |
+| `integration_pipeline/01_unified_silver_prices.ipynb` | Combines `ohlc_prices` + `ticks_prices` into one table with a `record_type` column (`ohlc_batch` / `streaming_tick`), MERGE into `team_crypto_silver.unified_prices` |
+| `infra_setup.ipynb` | Schemas, volume, secret scope (Unity Catalog setup) |
+| `README.md` | This file |
 
-## One-time setup (Databricks)
+## Run order
 
-1. Connect this repo as a Git folder in the shared workspace.
-2. Cluster: shared all-purpose cluster. Install library via **PyPI**: `kafka-python` (no Maven/allowlist needed — Event Hub is accessed over its Kafka-compatible endpoint).
-3. Secret scope `team-crypto-scope` (backed by the shared Key Vault) must contain:
-   - `eventhub-connection-string`
-   - `eventhub-name`
-   - `eventhub-namespace`
+1. `infra_setup.ipynb` — once, by whoever owns infra
+2. `batch_pipeline/01_batch_ohlc_ingestion.ipynb` → `batch_pipeline/02_silver_ohlc.ipynb`
+3. `streaming_pipeline/01_producer_price_ticks.ipynb` (runs in the background) → `streaming_pipeline/02_consumer_bronze_ticks.ipynb` (streaming job) → `streaming_pipeline/04_silver_prices.ipynb` (batch run on top of the stream)
+4. `integration_pipeline/01_unified_silver_prices.ipynb` — last step, once both silver tables have data
+5. Databricks SQL dashboard on top of `team_crypto_silver.unified_prices`
 
-No catalog, schema, or Event Hub name is hardcoded in any notebook — every notebook exposes them as **job/task parameters** (`dbutils.widgets`) with sensible defaults, so the same code runs unchanged across environments.
+## Schema evolution demo
 
-## Running order
-
-| Step | Notebook | Key parameters |
-|---|---|---|
-| 1 | `infra_setup.ipynb` | — |
-| 2 | `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | `catalog`, `bronze_schema` |
-| 3 | `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | `catalog`, `bronze_schema`, `eventhub_namespace`, `eventhub_name`, `secret_scope`, `checkpoint_base` |
-| 4 | `streaming_pipeline/01_producer_price_ticks.ipynb` | `eventhub_namespace`, `eventhub_name`, `secret_scope`, `symbols`, `poll_seconds`, `iterations` |
-| 5 | `streaming_pipeline/04_silver_prices.ipynb` | `catalog`, `bronze_schema`, `silver_schema` |
-| 6 | `batch_pipeline/02_silver_ohlc.ipynb` | `catalog`, `bronze_schema`, `silver_schema` |
-| 7 | `streaming_pipeline/05_unified_prices_view.ipynb` | `catalog`, `silver_schema` |
-| 8 | Dashboard over `team_crypto_silver.prices_unified` | — |
-
-Start the consumer (step 3) before the producer (step 4) so no early events are missed.
-
-## Schema evolution demo (live)
-
-1. Consumer stream (02) running for a few minutes.
-2. Edit the producer's event payload to add `volume_24h`, rerun once.
-3. Run `streaming_pipeline/04_silver_prices.ipynb` again — schema inference (from the newest row) picks up the new field automatically, no restart, no code change.
+1. Start the producer and consumer, let them run for a few minutes
+2. In `01_producer_price_ticks.ipynb`, uncomment the line that adds a new field, `volume_24h`
+3. Restart only the producer — the consumer (`02_consumer_bronze_ticks`) doesn't need touching, since it just stores raw JSON
+4. Rerun `04_silver_prices.ipynb` — the new field shows up automatically via `F.schema_of_json()` on the latest row, no code change and no stream restart needed
 
 ## Idempotency
 
-- Batch: `MERGE` on `(symbol, timestamp)` — rerunning `batch_pipeline/01_batch_ohlc_ingestion.ipynb` never duplicates rows.
-- Streaming: checkpoint-based, exactly-once per checkpoint — rerunning the consumer after a restart resumes from the last committed offset.
+Every write to bronze and silver goes through `MERGE`, keyed on:
+- `ohlc_batch` / `ohlc_prices`: `symbol, timestamp_unix` / `symbol, event_time`
+- `ticks_stream` / `ticks_prices`: `symbol, event_time`
+- `unified_prices`: `symbol, event_time, record_type`
 
-## Git workflow
-
-Branch per role: `feature/infra-setup`, `feature/batch-ingestion`, `feature/streaming-ingestion`. One PR per branch, at least one review from a teammate before merge into `main`.
+Rerunning any notebook without new data doesn't change row counts in the target table.
