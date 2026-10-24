@@ -105,6 +105,7 @@ Pipeline settings (serverless, triggered, development mode):
   "configuration": {
     "catalog": "dbr_dev_ua5816bd",
     "bronze_schema": "team_crypto_bronze",
+    "silver_schema": "team_crypto_silver"
     "eventhub_namespace": "evhua5816bd",
     "eventhub_name": "crypto-ticks",
     "secret_scope": "team-crypto-scope"
@@ -128,13 +129,20 @@ The Event Hub run completed successfully. Quarantine contained a negative price,
 
 These counts describe specific test runs; they are not fixed expectations for future data.
 
-Manual checks are in [`checks/streaming_quality_checks.sql`](checks/streaming_quality_checks.sql). Update the catalog and schema names for the environment being checked
+Manual checks are in [Manual quality checks](checks/streaming_quality_checks.ipynb). Update the catalog and schema names for the environment being checked
 
 ## Idempotency
+The notebook batch and integration paths use Delta `MERGE`:
 
-Every write to bronze and silver goes through `MERGE`, keyed on:
-- `ohlc_batch` / `ohlc_prices`: `symbol, timestamp_unix` / `symbol, event_time`
-- `ticks_stream` / `ticks_prices`: `symbol, event_time`
+- `ohlc_batch`: `symbol, timestamp_unix`
+- `ohlc_prices`: `symbol, event_time`
+- Legacy notebook `ticks_prices`: `symbol, event_time`
 - `unified_prices`: `symbol, event_time, record_type`
 
-Rerunning any notebook without new data doesn't change row counts in the target table.
+The legacy Bronze consumer and Lakeflow streaming tables use streaming writes rather than manual `MERGE`. Checkpoints track progress so ordinary reruns process new input.
+
+Lakeflow Silver additionally removes duplicate business keys using `symbol, event_time, source`.
+
+Checkpointing and deduplication serve different purposes: checkpointing tracks processed source records, while deduplication removes repeated business events.
+
+Changing the source type, such as replacing a Delta test source with Kafka, requires a compatible fresh streaming state. A full refresh resets state and rebuilds streaming tables from currently available source data; it should not be used as an ordinary rerun.
