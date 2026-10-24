@@ -105,7 +105,7 @@ Pipeline settings (serverless, triggered, development mode):
   "configuration": {
     "catalog": "dbr_dev_ua5816bd",
     "bronze_schema": "team_crypto_bronze",
-    "silver_schema": "team_crypto_silver"
+    "silver_schema": "team_crypto_silver",
     "eventhub_namespace": "evhua5816bd",
     "eventhub_name": "crypto-ticks",
     "secret_scope": "team-crypto-scope"
@@ -129,7 +129,7 @@ The Event Hub run completed successfully. Quarantine contained a negative price,
 
 These counts describe specific test runs; they are not fixed expectations for future data.
 
-Manual checks are in [Manual quality checks](checks/streaming_quality_checks.ipynb). Update the catalog and schema names for the environment being checked
+Manual checks are in Manual checks: [streaming quality checks](checks/streaming_quality_checks.ipynb).. Update the catalog and schema names for the environment being checked
 
 ## Idempotency
 The notebook batch and integration paths use Delta `MERGE`:
