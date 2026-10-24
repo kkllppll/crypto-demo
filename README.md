@@ -55,7 +55,8 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 |---|---|
 | `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`, idempotent MERGE on `symbol, timestamp_unix` |
 | `batch_pipeline/02_silver_ohlc.ipynb` | Casts types, normalizes symbol, dedups, MERGE into `team_crypto_silver.ohlc_prices` |
-| `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol |
+| `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol. `bad_every` widget injects bad events for the data-quality demo |
+| `lakeflow_pipeline/transformations/ticks_bronze.py` | Lakeflow streaming table: Event Hub (Kafka) → `team_crypto_bronze.ticks_bronze`, raw JSON plus Event Hub metadata |
 | `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | Structured Streaming from Event Hub (Kafka format) into `team_crypto_bronze.ticks_stream`, stored as raw JSON (no fixed schema — needed for the schema evolution demo) |
 | `streaming_pipeline/03_schema_evolution_twist.ipynb` | Demo helper: checks that a new field reaches silver without restarting the stream |
 | `streaming_pipeline/04_silver_prices.ipynb` | Infers schema from the newest bronze row (`F.schema_of_json`), normalizes symbol (bitcoin → BTC etc.), MERGE into `team_crypto_silver.ticks_prices` |
@@ -77,6 +78,40 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 2. In `01_producer_price_ticks.ipynb`, uncomment the line that adds a new field, `volume_24h`
 3. Restart only the producer — the consumer (`02_consumer_bronze_ticks`) doesn't need touching, since it just stores raw JSON
 4. Rerun `04_silver_prices.ipynb` — the new field shows up automatically via `F.schema_of_json()` on the latest row, no code change and no stream restart needed
+
+## Lakeflow streaming pipeline
+
+The streaming part is moving from notebooks 02/04 to a Lakeflow Declarative Pipeline, `team-crypto-ticks-streaming`. Every `.py` file in `lakeflow_pipeline/transformations/` is picked up by the pipeline.
+
+| Table | Layer | Contents |
+|---|---|---|
+| `team_crypto_bronze.ticks_bronze` | bronze | `value` (raw JSON string), `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp`, `source`, `ingestion_timestamp`, `load_date` |
+
+Pipeline settings (serverless, triggered, development mode):
+
+```json
+{
+  "name": "team-crypto-ticks-streaming",
+  "catalog": "dbr_dev_ua5816bd",
+  "schema": "team_crypto_silver",
+  "serverless": true,
+  "continuous": false,
+  "development": true,
+  "root_path": "/Workspace/Users/<you>/crypto-demo/lakeflow_pipeline",
+  "libraries": [{"glob": {"include": "/Workspace/Users/<you>/crypto-demo/lakeflow_pipeline/transformations/**"}}],
+  "configuration": {
+    "catalog": "dbr_dev_ua5816bd",
+    "bronze_schema": "team_crypto_bronze",
+    "eventhub_namespace": "evhua5816bd",
+    "eventhub_name": "crypto-ticks",
+    "secret_scope": "team-crypto-scope"
+  }
+}
+```
+
+Bad-data demo:
+1. Run `01_producer_price_ticks.ipynb` with `bad_every = 4`: after every 4th good event it sends one bad event, cycling through negative price, missing symbol, missing price and an exact duplicate
+2. Run the pipeline: all events land in bronze as is; data-quality rules are applied in silver
 
 ## Idempotency
 
