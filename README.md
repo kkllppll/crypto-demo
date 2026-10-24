@@ -129,7 +129,7 @@ The Event Hub run completed successfully. Quarantine contained a negative price,
 
 These counts describe specific test runs; they are not fixed expectations for future data.
 
-Manual checks are in Manual checks: [streaming quality checks](checks/streaming_quality_checks.ipynb).. Update the catalog and schema names for the environment being checked
+Manual checks are in [streaming quality checks](lakeflow_pipeline/checks/streaming_quality_checks.ipynb). Update catalog and schema names for your environment. 
 
 ## Idempotency
 The notebook batch and integration paths use Delta `MERGE`:
