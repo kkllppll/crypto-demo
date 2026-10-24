@@ -85,7 +85,10 @@ The streaming part is moving from notebooks 02/04 to a Lakeflow Declarative Pipe
 
 | Table | Layer | Contents |
 |---|---|---|
-| `team_crypto_bronze.ticks_bronze` | bronze | `value` (raw JSON string), `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp`, `source`, `ingestion_timestamp`, `load_date` |
+| `<bronze_schema>.ticks_bronze` | bronze | `value` (raw JSON string), `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp`, `source`, `ingestion_timestamp`, `load_date` |
+| `_ticks_validated` | intermediate (private) | All Bronze records with parsed fields, normalized `symbol`, numeric `price_usd`, converted `event_time`, individual quality-rule results, `failed_rules`, `is_valid`, and `quarantine_reason` |
+| `<silver_schema>.ticks_silver` | silver | Valid records deduplicated by `symbol, event_time, source`: `symbol`, `event_time`, `price_usd`, `quote_currency`, `source`, `transport_source`, `ingestion_timestamp`, `load_date`, `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp` |
+| `<silver_schema>.ticks_quarantine` | quarantine | Invalid records: original `value`, `raw_symbol`, `symbol`, `price_usd`, `event_time`, `failed_rules`, `quarantine_reason`, `source`, `ingestion_timestamp`, `load_date`, `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp` |
 
 Pipeline settings (serverless, triggered, development mode):
 
@@ -112,6 +115,20 @@ Pipeline settings (serverless, triggered, development mode):
 Bad-data demo:
 1. Run `01_producer_price_ticks.ipynb` with `bad_every = 4`: after every 4th good event it sends one bad event, cycling through negative price, missing symbol, missing price and an exact duplicate
 2. Run the pipeline: all events land in bronze as is; data-quality rules are applied in silver
+
+### Verification performed
+
+| Dataset | Bronze | Silver | Quarantine | Duplicates removed |
+|---|---:|---:|---:|---:|
+| Messages read from Event Hub | 22 | 18 | 3 | 1 |
+
+For the prepared dataset, rerunning without new input left row counts unchanged.
+
+The Event Hub run completed successfully. Quarantine contained a negative price, a missing symbol, and a missing price. Silver contained 18 records with no duplicate business keys.
+
+These counts describe specific test runs; they are not fixed expectations for future data.
+
+Manual checks are in [`checks/streaming_quality_checks.sql`](checks/streaming_quality_checks.sql). Update the catalog and schema names for the environment being checked
 
 ## Idempotency
 
