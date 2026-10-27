@@ -122,7 +122,7 @@ Bad-data demo:
 2. Run the pipeline: all events land in bronze as is; data-quality rules are applied in silver
 
 Twist (new symbol / new field):
-1. New symbol: add it to the producer's `symbols` widget, e.g. `bitcoin,ethereum,solana,cardano`. Known CoinGecko ids are mapped to tickers (bitcoin → BTC), any other non-empty id passes through upper-cased (cardano → CARDANO); no code change
+1. New symbol: add it to the producer's `symbols` widget, e.g. `bitcoin,ethereum,solana,cardano`. Only symbols listed in `SYMBOL_MAP` are accepted, so cardano lands in quarantine with `known_symbol`. To accept it, add `"cardano": "ADA"` to `SYMBOL_MAP` (and to check 2 in the checks notebook)
 2. New field: run the producer with `include_volume = true`. `volume_24h` is already declared in `PAYLOAD_SCHEMA`, so it fills in silver; older rows keep NULL
 
 ### Verification performed
@@ -130,7 +130,7 @@ Twist (new symbol / new field):
 | Dataset | Bronze | Silver | Quarantine | Duplicates removed |
 |---|---:|---:|---:|---:|
 | Messages read from Event Hub | 22 | 18 | 3 | 1 |
-| + twist: 2 polls × 4 symbols (incl. cardano) with `volume_24h` | 30 | 26 | 3 | 1 |
+| + twist: 2 polls × 4 symbols (incl. cardano) with `volume_24h` | 30 | 24 | 5 | 1 |
 
 For the prepared dataset, rerunning without new input left row counts unchanged.
 
