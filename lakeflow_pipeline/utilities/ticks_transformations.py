@@ -11,7 +11,7 @@ PAYLOAD_SCHEMA = StructType([
     StructField("_corrupt_record", StringType()),
 ])
 
-# known CoinGecko ids get a ticker; any other non-empty symbol passes through upper-cased
+# only listed symbols are accepted; anything else gets NULL and goes to quarantine (known_symbol)
 SYMBOL_MAP = {
     "bitcoin": "BTC",
     "ethereum": "ETH",
@@ -24,7 +24,7 @@ SYMBOL_MAP = {
 # criteria for a good entry
 RULES = {
     "valid_json": "value IS NOT NULL AND payload IS NOT NULL AND payload._corrupt_record IS NULL",
-    "valid_symbol": "symbol IS NOT NULL",
+    "known_symbol": "symbol IS NOT NULL",
     "positive_finite_price": "price_usd IS NOT NULL AND NOT isnan(price_usd) AND price_usd > 0 AND price_usd < CAST('Infinity' AS DOUBLE)",
     "valid_event_time": "event_time IS NOT NULL",
     "not_in_future": "event_time IS NOT NULL AND event_time <= ingestion_timestamp + INTERVAL 5 MINUTES",
@@ -32,9 +32,8 @@ RULES = {
 
 
 def normalize_symbol(raw_symbol):
-    key = F.nullif(F.lower(F.trim(raw_symbol)), F.lit(""))
     symbols = F.create_map(*[F.lit(x) for pair in SYMBOL_MAP.items() for x in pair])
-    return F.coalesce(symbols[key], F.upper(key))
+    return symbols[F.lower(F.trim(raw_symbol))]
 
 
 # disassemble and check
