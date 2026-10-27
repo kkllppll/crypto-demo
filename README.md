@@ -55,8 +55,12 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 |---|---|
 | `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`, idempotent MERGE on `symbol, timestamp_unix` |
 | `batch_pipeline/02_silver_ohlc.ipynb` | Casts types, normalizes symbol, dedups, MERGE into `team_crypto_silver.ohlc_prices` |
-| `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol. `bad_every` widget injects bad events for the data-quality demo |
+| `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol. `bad_every` widget injects bad events for the data-quality demo, `include_volume` adds `volume_24h` (schema evolution twist) |
 | `lakeflow_pipeline/transformations/ticks_bronze.py` | Lakeflow streaming table: Event Hub (Kafka) → `team_crypto_bronze.ticks_bronze`, raw JSON plus Event Hub metadata |
+| `lakeflow_pipeline/transformations/ticks_silver.py` | Lakeflow: bronze → private `_ticks_validated` → `team_crypto_silver.ticks_silver` (valid, deduplicated ticks) |
+| `lakeflow_pipeline/transformations/ticks_quarantine.py` | Lakeflow: invalid ticks with original JSON and rejection reasons → `team_crypto_silver.ticks_quarantine` |
+| `lakeflow_pipeline/utilities/ticks_transformations.py` | Plain PySpark functions used by the pipeline (`parse_and_validate_ticks`, `normalize_symbol`, `RULES`); importable from unit tests |
+| `lakeflow_pipeline/checks/streaming_quality_checks.ipynb` | Manual checks across bronze / silver / quarantine; catalog and schemas are widgets |
 | `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | Structured Streaming from Event Hub (Kafka format) into `team_crypto_bronze.ticks_stream`, stored as raw JSON (no fixed schema — needed for the schema evolution demo) |
 | `streaming_pipeline/03_schema_evolution_twist.ipynb` | Demo helper: checks that a new field reaches silver without restarting the stream |
 | `streaming_pipeline/04_silver_prices.ipynb` | Infers schema from the newest bronze row (`F.schema_of_json`), normalizes symbol (bitcoin → BTC etc.), MERGE into `team_crypto_silver.ticks_prices` |
@@ -87,7 +91,7 @@ The streaming part is moving from notebooks 02/04 to a Lakeflow Declarative Pipe
 |---|---|---|
 | `<bronze_schema>.ticks_bronze` | bronze | `value` (raw JSON string), `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp`, `source`, `ingestion_timestamp`, `load_date` |
 | `_ticks_validated` | intermediate (private) | All Bronze records with parsed fields, normalized `symbol`, numeric `price_usd`, converted `event_time`, individual quality-rule results, `failed_rules`, `is_valid`, and `quarantine_reason` |
-| `<silver_schema>.ticks_silver` | silver | Valid records deduplicated by `symbol, event_time, source`: `symbol`, `event_time`, `price_usd`, `quote_currency`, `source`, `transport_source`, `ingestion_timestamp`, `load_date`, `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp` |
+| `<silver_schema>.ticks_silver` | silver | Valid records deduplicated by `symbol, event_time, source` within a 10-minute watermark: `symbol`, `event_time`, `price_usd`, `volume_24h`, `quote_currency`, `source`, `transport_source`, `ingestion_timestamp`, `load_date`, `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp` |
 | `<silver_schema>.ticks_quarantine` | quarantine | Invalid records: original `value`, `raw_symbol`, `symbol`, `price_usd`, `event_time`, `failed_rules`, `quarantine_reason`, `source`, `ingestion_timestamp`, `load_date`, `eventhub_partition`, `eventhub_offset`, `eventhub_timestamp` |
 
 Pipeline settings (serverless, triggered, development mode):
@@ -117,11 +121,16 @@ Bad-data demo:
 1. Run `01_producer_price_ticks.ipynb` with `bad_every = 4`: after every 4th good event it sends one bad event, cycling through negative price, missing symbol, missing price and an exact duplicate
 2. Run the pipeline: all events land in bronze as is; data-quality rules are applied in silver
 
+Twist (new symbol / new field):
+1. New symbol: add it to the producer's `symbols` widget, e.g. `bitcoin,ethereum,solana,cardano`. Known CoinGecko ids are mapped to tickers (bitcoin → BTC), any other non-empty id passes through upper-cased (cardano → CARDANO); no code change
+2. New field: run the producer with `include_volume = true`. `volume_24h` is already declared in `PAYLOAD_SCHEMA`, so it fills in silver; older rows keep NULL
+
 ### Verification performed
 
 | Dataset | Bronze | Silver | Quarantine | Duplicates removed |
 |---|---:|---:|---:|---:|
 | Messages read from Event Hub | 22 | 18 | 3 | 1 |
+| + twist: 2 polls × 4 symbols (incl. cardano) with `volume_24h` | 30 | 26 | 3 | 1 |
 
 For the prepared dataset, rerunning without new input left row counts unchanged.
 
@@ -129,7 +138,7 @@ The Event Hub run completed successfully. Quarantine contained a negative price,
 
 These counts describe specific test runs; they are not fixed expectations for future data.
 
-Manual checks are in [streaming quality checks](lakeflow_pipeline/checks/streaming_quality_checks.ipynb). Update catalog and schema names for your environment. 
+Manual checks are in [streaming quality checks](lakeflow_pipeline/checks/streaming_quality_checks.ipynb); catalog and schemas are set with widgets.
 
 ## Idempotency
 The notebook batch and integration paths use Delta `MERGE`:
@@ -141,7 +150,7 @@ The notebook batch and integration paths use Delta `MERGE`:
 
 The legacy Bronze consumer and Lakeflow streaming tables use streaming writes rather than manual `MERGE`. Checkpoints track progress so ordinary reruns process new input.
 
-Lakeflow Silver additionally removes duplicate business keys using `symbol, event_time, source`.
+Lakeflow Silver additionally removes duplicate business keys using `symbol, event_time, source` within a 10-minute watermark, so streaming state stays bounded.
 
 Checkpointing and deduplication serve different purposes: checkpointing tracks processed source records, while deduplication removes repeated business events.
 
