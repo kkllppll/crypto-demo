@@ -1,60 +1,59 @@
 # crypto-demo
 
-Team project for the Databricks/Azure Data Engineering course: a batch + streaming pipeline for crypto prices (BTC, ETH, SOL), merged into one silver table and shown on a dashboard.
-
+A cryptocurrency medallion lakehouse combining batch OHLC data and streaming price ticks, with data-quality controls, SCD Type 2 history, and governed Gold analytics.
 ## Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Sources
-        A1[Kraken API<br/>hourly OHLC]
-        A2[CoinGecko API<br/>live price ticks]
+  flowchart LR
+    K["Kraken API<br/>hourly OHLC"]
+    C["CoinGecko API<br/>live prices"]
+    P["Producer<br/>price ticks"]
+    E["Event Hub<br/>Kafka interface"]
+
+    subgraph BATCH["Batch notebooks"]
+        BI["Batch ingestion"]
+        BB[("Bronze: ohlc_batch<br/>append-only loads")]
+        BS[("Silver: ohlc_prices<br/>SCD Type 2 history")]
+        BI --> BB --> BS
     end
 
-    subgraph Batch["Batch pipeline"]
-        B1[01_batch_ohlc_ingestion]
-        B2[02_silver_ohlc]
+    subgraph LF["Lakeflow streaming pipeline"]
+        SB[("Bronze: ticks_bronze<br/>raw JSON and metadata")]
+        V["Private: _ticks_validated<br/>parsing and expectations"]
+        SS[("Silver: ticks_silver<br/>valid records and dedup")]
+        Q[("ticks_quarantine<br/>invalid records and reasons")]
+        SB --> V
+        V -->|valid| SS
+        V -->|invalid| Q
     end
 
-    subgraph Streaming["Streaming pipeline"]
-        S1[01_producer_price_ticks]
-        S2["Event Hub<br/>(Kafka protocol)"]
-        S3[02_consumer_bronze_ticks]
-        S4[04_silver_prices]
+    subgraph GOLD["Gold: team_crypto_gold"]
+        D["Shared dimensions<br/>dim_asset, dim_date, dim_source"]
+        FO[("fact_ohlc_hourly<br/>one asset per hour")]
+        FT[("fact_price_tick<br/>one asset per moment")]
+        D --> FO
+        D --> FT
     end
 
-    subgraph Bronze["team_crypto_bronze"]
-        BR1[(ohlc_batch)]
-        BR2[(ticks_stream)]
-    end
-
-    subgraph Silver["team_crypto_silver"]
-        SV1[(ohlc_prices)]
-        SV2[(ticks_prices)]
-        SV3[(unified_prices)]
-    end
-
-    subgraph Integration["Integration pipeline"]
-        I1[01_unified_silver_prices]
-    end
-
-    A1 --> B1 --> BR1 --> B2 --> SV1
-    A2 --> S1 --> S2 --> S3 --> BR2 --> S4 --> SV2
-
-    SV1 --> I1
-    SV2 --> I1
-    I1 --> SV3
-    SV3 --> D[Databricks SQL Dashboard]
+    DASH["Gold dashboard<br/>filters and analytics"]
+    K --> BI
+    C --> P --> E --> SB
+    BS -->|current versions only| FO
+    SS --> FT
+    BS -->|asset symbols| D
+    SS -->|asset symbols| D
+    FO --> DASH
+    FT --> DASH
 ```
 
-Batch and streaming run independently and each writes its own silver table (`ohlc_prices`, `ticks_prices`). The `integration_pipeline` combines both into one table, `unified_prices`, which feeds the dashboard.
+Batch and streaming run independently and each writes its own silver table (`ohlc_prices`, `ticks_prices`). 
 
 ## Repo structure
 
 | Folder / file | What it does |
 |---|---|
-| `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`, idempotent MERGE on `symbol, timestamp_unix` |
-| `batch_pipeline/02_silver_ohlc.ipynb` | Casts types, normalizes symbol, dedups, MERGE into `team_crypto_silver.ohlc_prices` |
+| `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`тusing append-only writes; adds a stable `entry_id` and ingestion timestamp |
+| `batch_pipeline/02_silver_ohlc.ipynb` | Processes the latest Bronze load, normalizes and deduplicates records, and maintains SCD Type 2 history in `team_crypto_silver.ohlc_prices` |
 | `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol. `bad_every` widget injects bad events for the data-quality demo, `include_volume` adds `volume_24h` (schema evolution twist) |
 | `lakeflow_pipeline/transformations/ticks_bronze.py` | Lakeflow streaming table: Event Hub (Kafka) → `team_crypto_bronze.ticks_bronze`, raw JSON plus Event Hub metadata |
 | `lakeflow_pipeline/transformations/ticks_silver.py` | Lakeflow: bronze → private `_ticks_validated` → `team_crypto_silver.ticks_silver` (valid, deduplicated ticks) |
@@ -80,11 +79,17 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 
 1. `infra_setup.ipynb` — once, by whoever owns infra
 2. `batch_pipeline/01_batch_ohlc_ingestion.ipynb` → `batch_pipeline/02_silver_ohlc.ipynb`
-3. `streaming_pipeline/01_producer_price_ticks.ipynb` (runs in the background) → `streaming_pipeline/02_consumer_bronze_ticks.ipynb` (streaming job) → `streaming_pipeline/04_silver_prices.ipynb` (batch run on top of the stream)
-4. `integration_pipeline/01_unified_silver_prices.ipynb` — last step, once both silver tables have data
-5. Databricks SQL dashboard on top of `team_crypto_silver.unified_prices`
-6. `gold_pipeline/00_gold_setup` (once) -> `01_gold_dim_date` (once) -> `02_gold_dims` -> `03_gold_fact_ohlc_hourly` -> `04_gold_fact_price_tick` (after the Lakeflow pipeline) -> `05_governance` (once)
-7. Dashboard "Crypto Prices - Gold" on top of `team_crypto_gold`
+3. Run `streaming_pipeline/01_producer_price_ticks.ipynb` to send events, then run the Lakeflow pipeline `team-crypto-ticks-streaming` to update streaming Bronze, Silver and Quarantine.
+4. Optionally run `lakeflow_pipeline/checks/streaming_quality_checks.ipynb` against the configured schemas.
+5. Initialize Gold once:
+   - `gold_pipeline/00_gold_setup.ipynb`
+   - `gold_pipeline/01_gold_dim_date.ipynb`
+6. After both Silver paths are ready, run:
+   - `gold_pipeline/02_gold_dims.ipynb`
+   - `gold_pipeline/03_gold_fact_ohlc_hourly.ipynb`
+   - `gold_pipeline/04_gold_fact_price_tick.ipynb`
+7. Run `gold_pipeline/05_governance.ipynb` for the initial RLS/CLS setup. Execute its demonstration cells separately when demonstrating access restrictions.
+8. Refresh the "Crypto Prices - Gold" dashboard.
 
 ## Schema evolution demo
 
