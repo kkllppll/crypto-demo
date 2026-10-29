@@ -65,6 +65,14 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 | `streaming_pipeline/03_schema_evolution_twist.ipynb` | Demo helper: checks that a new field reaches silver without restarting the stream |
 | `streaming_pipeline/04_silver_prices.ipynb` | Infers schema from the newest bronze row (`F.schema_of_json`), normalizes symbol (bitcoin → BTC etc.), MERGE into `team_crypto_silver.ticks_prices` |
 | `integration_pipeline/01_unified_silver_prices.ipynb` | Combines `ohlc_prices` + `ticks_prices` into one table with a `record_type` column (`ohlc_batch` / `streaming_tick`), MERGE into `team_crypto_silver.unified_prices` |
+| `gold_pipeline/00_gold_setup.ipynb` | DDL of gold tables (PK/FK, comments, clustered by `date_key`); run once |
+| `gold_pipeline/01_gold_dim_date.ipynb` | Calendar `dim_date`, 2025-01-01 … 2030-12-31; run once |
+| `gold_pipeline/02_gold_dims.ipynb` | `dim_source` (static) and `dim_asset` (symbols from silver), insert-only MERGE |
+| `gold_pipeline/03_gold_fact_ohlc_hourly.ipynb` | `fact_ohlc_hourly` from current SCD2 versions of `ohlc_prices`, with quality gate |
+| `gold_pipeline/04_gold_fact_price_tick.ipynb` | `fact_price_tick` from `ticks_silver`, with quality gate |
+| `gold_pipeline/05_governance.ipynb` | `access_rules`, row filter, column mask, grants; demo cells for RLS/CLS |
+| `gold_pipeline/utilities/gold_transformations.py` | Plain PySpark functions used by gold notebooks; importable from unit tests |
+| `dashboard_queries/gold_dashboard_queries.sql` | SQL datasets of the gold dashboard (latest prices, hourly candles, daily summary, live ticks) |  
 | `infra_setup.ipynb` | Schemas, volume, secret scope (Unity Catalog setup) |
 | `README.md` | This file |
 
@@ -75,6 +83,8 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 3. `streaming_pipeline/01_producer_price_ticks.ipynb` (runs in the background) → `streaming_pipeline/02_consumer_bronze_ticks.ipynb` (streaming job) → `streaming_pipeline/04_silver_prices.ipynb` (batch run on top of the stream)
 4. `integration_pipeline/01_unified_silver_prices.ipynb` — last step, once both silver tables have data
 5. Databricks SQL dashboard on top of `team_crypto_silver.unified_prices`
+6. `gold_pipeline/00_gold_setup` (once) -> `01_gold_dim_date` (once) -> `02_gold_dims` -> `03_gold_fact_ohlc_hourly` -> `04_gold_fact_price_tick` (after the Lakeflow pipeline) -> `05_governance` (once)
+7. Dashboard "Crypto Prices - Gold" on top of `team_crypto_gold`
 
 ## Schema evolution demo
 
@@ -139,6 +149,89 @@ The Event Hub run completed successfully. Quarantine contained a negative price,
 These counts describe specific test runs; they are not fixed expectations for future data.
 
 Manual checks are in [streaming quality checks](lakeflow_pipeline/checks/streaming_quality_checks.ipynb); catalog and schemas are set with widgets.
+
+## Gold layer
+
+Schema `team_crypto_gold`: a star schema built on `team_crypto_silver.ohlc_prices` and `team_crypto_silver.ticks_silver`. Two business processes with different grain give two fact tables that share three dimensions.
+
+```mermaid
+erDiagram
+    fact_ohlc_hourly {
+        bigint asset_key PK, FK
+        timestamp event_time PK
+        int date_key FK
+        bigint source_key FK
+        int hour_of_day
+        double open
+        double high
+        double low
+        double close
+        double vwap
+        double volume
+        bigint trade_count
+        double price_change_pct
+    }
+    fact_price_tick {
+        bigint asset_key PK, FK
+        timestamp event_time PK
+        int date_key FK
+        bigint source_key FK
+        double price_usd
+        double volume_24h
+    }
+    dim_asset {
+        bigint asset_key PK
+        string symbol
+        string asset_name
+    }
+    dim_date {
+        int date_key PK
+        date full_date
+        int year
+        int quarter
+        int month
+        string month_name
+        int day_of_month
+        string day_name
+        boolean is_weekend
+    }
+    dim_source {
+        bigint source_key PK
+        string source_name
+        string source_type
+        string provider
+    }
+    dim_asset  ||--o{ fact_ohlc_hourly : asset_key
+    dim_date   ||--o{ fact_ohlc_hourly : date_key
+    dim_source ||--o{ fact_ohlc_hourly : source_key
+    dim_asset  ||--o{ fact_price_tick  : asset_key
+    dim_date   ||--o{ fact_price_tick  : date_key
+    dim_source ||--o{ fact_price_tick  : source_key
+```
+
+| Table | Grain / contents | Source |
+|---|---|---|
+| `fact_ohlc_hourly` | one asset × one hour: OHLC, volume (coins), trade count, % change | current versions (`is_current`) of `ohlc_prices` |
+| `fact_price_tick` | one asset × one moment: price, rolling 24h volume (USD) | `ticks_silver` |
+| `dim_asset` | one row per symbol with a readable name | symbols from both silver tables |
+| `dim_date` | one row per day, 2025–2030 | generated |
+| `dim_source` | `kraken_api` (batch), `streaming` (CoinGecko) | static list |
+
+Design notes:
+- Facts hold only dimension keys and measures. Prices are non-additive (use avg/min/max/last); `volume` (coins per hour) and `volume_24h` (USD, rolling) are different units and are not combined.
+- Each fact notebook has a quality gate before writing: row count equals distinct business keys in silver, no missing dimension keys, unique primary key, every date inside `dim_date`. If any check fails, nothing is written.
+- Idempotent loads: dimensions use insert-only `MERGE` (surrogate keys stay stable), facts use `INSERT OVERWRITE`. Tables are created once in `00_gold_setup` and never recreated, so row filters and masks stay attached.
+
+RLS / CLS (`05_governance`):
+- Every member of `students` sees all assets and volumes by default.
+- A personal row in `access_rules` overrides the default: `symbol` limits visible assets (row filter `rls_asset_filter` on both facts), `can_see_volume = FALSE` masks `volume` / `volume_24h` as `NULL` (column mask `cls_mask_volume`).
+- Users outside `students` without a personal row see nothing.
+
+### Gold verification
+
+Reconciliation: on every run the quality gate checks that each fact has exactly as many rows as distinct business keys in silver; the load stops if they differ.
+
+RLS/CLS: with a personal rule `BTC / can_see_volume = FALSE` the same query returns only BTC with `NULL` volume; after removing the rule all three assets are visible again.
 
 ## Idempotency
 The notebook batch and integration paths use Delta `MERGE`:
