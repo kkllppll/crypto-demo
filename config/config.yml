@@ -1,0 +1,83 @@
+catalog: dbr_dev_ua5816bd
+
+bronze:
+  schema: team_crypto_bronze
+  table: ohlc_batch
+
+  columns:
+    - entry_id
+    - symbol
+    - timestamp_unix
+    - source
+    - open
+    - high
+    - low
+    - close
+    - vwap
+    - volume
+    - trade_count
+    - event_timestamp
+    - ingestion_timestamp
+
+silver:
+  schema: team_crypto_silver
+  table: ohlc_prices
+
+  columns:
+    - entry_id
+    - symbol
+    - timestamp_unix
+    - source
+    - quote_currency
+    - open
+    - high
+    - low
+    - close
+    - vwap
+    - volume
+    - trade_count
+    - event_time
+    - ingestion_timestamp
+
+  business_key: entry_id
+
+gold:
+  schema: team_crypto_gold
+
+  tables:
+    fact_ohlc_hourly: fact_ohlc_hourly
+    fact_price_tick: fact_price_tick
+    dim_asset: dim_asset
+    dim_date: dim_date
+    dim_source: dim_source
+    access_rules: access_rules
+
+  start_date: "2025-01-01"
+  end_date: "2030-12-31"
+
+  reader_group: students
+  reviewer_email: lbiel@softserve.academy
+
+  rls_function: rls_asset_filter
+  cls_function: cls_mask_volume
+
+  filtered_facts:
+    - fact_ohlc_hourly
+    - fact_price_tick
+
+  masked_columns:
+    - table: fact_ohlc_hourly
+      column: volume
+    - table: fact_price_tick
+      column: volume_24h
+
+  reader_tables:
+    - dim_asset
+    - dim_date
+    - dim_source
+    - fact_ohlc_hourly
+    - fact_price_tick
+
+api:
+  url: https://api.kraken.com/0/public/OHLC
+  interval: 60
