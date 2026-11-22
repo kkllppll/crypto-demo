@@ -7,8 +7,10 @@ same row filters / column masks apply as on the dashboard. Without the header
 (local run, scope not granted) the app falls back to its own service principal.
 """
 
+import base64
 import json
 import os
+import sys
 
 import streamlit as st
 from databricks.sdk import WorkspaceClient
@@ -38,6 +40,17 @@ def workspace_client() -> tuple:
         cfg = Config()
         return WorkspaceClient(host=cfg.host, token=token, auth_type="pat"), "your identity"
     return WorkspaceClient(), "the app service principal"
+
+
+def token_scopes() -> str:
+    """Scopes of the forwarded user token (JWT claim only, never the token), for error logs."""
+    token = st.context.headers.get("x-forwarded-access-token") or ""
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return str(claims.get("scope") or claims.get("scp"))
+    except (IndexError, ValueError):
+        return "n/a"
 
 
 def ask_agent(client: WorkspaceClient, history: list) -> dict:
@@ -128,6 +141,8 @@ if prompt:
                 # keep tool calls in history so follow-up questions have context
                 st.session_state.history.extend(response.get("output", []))
             except Exception as exc:  # shown to the user instead of a stack trace
+                print(f"agent call failed: {type(exc).__name__}: {exc}; token scopes: {token_scopes()}",
+                      file=sys.stderr, flush=True)
                 answer, steps = f"Sorry, the assistant is unavailable right now ({type(exc).__name__}).", []
                 st.session_state.history.pop()
         st.markdown(answer or "_No answer._")

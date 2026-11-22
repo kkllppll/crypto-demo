@@ -90,5 +90,11 @@ resources:
             value: "false"
       # The app calls the agent with the signed-in user's token (on-behalf-of-user),
       # so it needs no endpoint permission of its own: readers get CAN_QUERY from the job.
+      # The agent's downstream OBO token is narrowed to the caller's token, so the app
+      # must also hold the scopes the agent declares (SQL and Vector Search).
       user_api_scopes:
         - serving.serving-endpoints
+        - sql.statement-execution
+        - sql.warehouses
+        - vectorsearch.vector-search-indexes
+        - vectorsearch.vector-search-endpoints
