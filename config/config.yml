@@ -90,7 +90,7 @@ ai:
   vector_search_endpoint: crypto-assistant-vs
   vector_index: kb_documents_index
   embedding_endpoint: databricks-gte-large-en
-  llm_endpoint: databricks-claude-sonnet-4-5
+  llm_endpoint: databricks-llama-4-maverick
   model_name: crypto_assistant
   serving_endpoint: crypto-assistant-dev
   warehouse_id: ""

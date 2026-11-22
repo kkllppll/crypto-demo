@@ -1,7 +1,7 @@
 # Development config, used only when agent.py runs outside a logged model
 # (e.g. interactively in a notebook). The job passes the real values for each
 # target to mlflow.pyfunc.log_model(model_config=...).
-llm_endpoint: databricks-claude-sonnet-4-5
+llm_endpoint: databricks-llama-4-maverick
 catalog: dbr_dev_ua5816bd
 ai_schema: team_crypto_ai
 vector_index: dbr_dev_ua5816bd.team_crypto_ai.kb_documents_index

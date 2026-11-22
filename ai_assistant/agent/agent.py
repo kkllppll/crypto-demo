@@ -309,7 +309,8 @@ class CryptoAssistant(ResponsesAgent):
     @property
     def llm(self):
         if self._llm is None:
-            self._llm = self.system_client.serving_endpoints.get_open_ai_client()
+            # pay-per-token endpoints are rate limited: retry 429 / 5xx with exponential backoff
+            self._llm = self.system_client.serving_endpoints.get_open_ai_client(max_retries=6, timeout=120.0)
         return self._llm
 
     def user_client(self):
@@ -448,12 +449,12 @@ class CryptoAssistant(ResponsesAgent):
             msg = choice.message
             tool_calls = list(msg.tool_calls or [])
             if not tool_calls:
-                yield ResponsesAgentStreamEvent(type="response.output_item.done", item=text_item(msg.content or ""))
+                yield ResponsesAgentStreamEvent(type="response.output_item.done", item=text_item(_content_text(msg.content)))
                 return
 
             messages.append({
                 "role": "assistant",
-                "content": msg.content,
+                "content": _content_text(msg.content) or None,
                 "tool_calls": [
                     {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
                     for tc in tool_calls
@@ -480,5 +481,14 @@ if os.environ.get("CRYPTO_AGENT_SKIP_AUTOLOG") != "1":
     except Exception:  # openai flavor not installed (e.g. unit tests)
         pass
 
-AGENT = CryptoAssistant()
+def _load_config() -> Optional[dict]:
+    """The config logged with the model is only visible while MLflow imports this file,
+    so it has to be read now, not lazily at the first request."""
+    try:
+        return mlflow.models.ModelConfig(development_config=str(DEV_CONFIG)).to_dict()
+    except Exception:  # neither a logged config nor the dev file (e.g. unit tests pass their own)
+        return None
+
+
+AGENT = CryptoAssistant(config=_load_config())
 mlflow.models.set_model(AGENT)

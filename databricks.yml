@@ -22,7 +22,7 @@ variables:
       warehouse: Serverless Starter Warehouse
   llm_endpoint:
     description: Foundation model endpoint the agent reasons with
-    default: databricks-claude-sonnet-4-5
+    default: databricks-llama-4-maverick
   embedding_endpoint:
     default: databricks-gte-large-en
   agent_endpoint:

@@ -181,6 +181,13 @@ def test_plain_answer_without_tools():
     assert agent.llm.requests[0][0]["role"] == "system"
 
 
+def test_list_content_from_reasoning_models_is_flattened():
+    parts = [{"type": "reasoning", "summary": [{"type": "summary_text", "text": "thinking"}]},
+             {"type": "text", "text": "BTC is up."}]
+    agent, _ = make_agent([(parts, None)])
+    assert ask(agent).output[0].content[0]["text"] == "BTC is up."
+
+
 def test_tool_call_then_answer():
     agent, client = make_agent([
         (None, [_tool_call("c1", "get_latest_prices", {})]),
