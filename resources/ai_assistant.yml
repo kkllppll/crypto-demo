@@ -1,0 +1,100 @@
+# AI assistant: knowledge base + vector index + UC tool functions + agent
+# (evaluated, registered in UC, served) + Databricks App chat UI.
+#
+# Declarative here: schema (with grants), vector search endpoint, MLflow
+# experiment, job, app. Created by the job because they depend on data or on a
+# model version: the KB table, the Delta Sync index, the UC functions, the
+# registered model and the serving endpoint.
+
+resources:
+  schemas:
+    crypto_ai:
+      catalog_name: ${var.catalog}
+      name: team_crypto_ai
+      comment: "AI assistant: knowledge base, vector index, agent tools and model"
+      grants:
+        - principal: ${var.reader_group}
+          privileges: [USE_SCHEMA]
+
+  vector_search_endpoints:
+    crypto_kb:
+      name: crypto-assistant-vs-${bundle.target}
+      endpoint_type: STANDARD
+
+  experiments:
+    crypto_assistant:
+      name: ${workspace.root_path}/crypto-assistant-experiment
+
+  jobs:
+    crypto_ai_assistant:
+      name: crypto-ai-assistant-${bundle.target}
+      description: >
+        Refreshes the assistant's knowledge base from gold, syncs the vector index,
+        (re)creates the UC tool functions, then logs, evaluates (LLM judges with a
+        quality gate) and deploys the agent.
+      max_concurrent_runs: 1
+      timeout_seconds: 7200
+      tags:
+        project: crypto-demo
+        component: ai-assistant
+      schedule:
+        quartz_cron_expression: "0 30 6 * * ?"   # daily, after the gold load
+        timezone_id: UTC
+        pause_status: ${var.ai_schedule_status}
+      email_notifications:
+        on_failure: ${var.notification_emails}
+      parameters:
+        - {name: catalog, default: "${var.catalog}"}
+        - {name: gold_schema, default: "${var.gold_schema}"}
+        - {name: silver_schema, default: "${var.silver_schema}"}
+        - {name: ai_schema, default: "${resources.schemas.crypto_ai.name}"}
+        - {name: reader_group, default: "${var.reader_group}"}
+        - {name: vector_search_endpoint, default: "${resources.vector_search_endpoints.crypto_kb.name}"}
+        - {name: embedding_endpoint, default: "${var.embedding_endpoint}"}
+        - {name: llm_endpoint, default: "${var.llm_endpoint}"}
+        - {name: model_name, default: crypto_assistant}
+        - {name: serving_endpoint, default: "${var.agent_endpoint}"}
+        - {name: warehouse_id, default: "${var.warehouse_id}"}
+        - {name: use_obo, default: "${var.use_obo}"}
+        - {name: experiment_path, default: "${resources.experiments.crypto_assistant.name}"}
+        - {name: eval_thresholds, default: ""}
+        - {name: deploy, default: "true"}
+      tasks:
+        - task_key: create_uc_tools
+          notebook_task:
+            notebook_path: ../ai_assistant/notebooks/03_create_uc_tools.py
+        - task_key: build_knowledge_base
+          depends_on: [{task_key: create_uc_tools}]
+          notebook_task:
+            notebook_path: ../ai_assistant/notebooks/01_build_knowledge_base.py
+        - task_key: sync_vector_index
+          depends_on: [{task_key: build_knowledge_base}]
+          notebook_task:
+            notebook_path: ../ai_assistant/notebooks/02_sync_vector_index.py
+        - task_key: log_evaluate_deploy
+          depends_on: [{task_key: sync_vector_index}]
+          notebook_task:
+            notebook_path: ../ai_assistant/notebooks/04_log_evaluate_deploy.py
+
+  apps:
+    crypto_assistant_app:
+      name: crypto-assistant-${bundle.target}
+      description: Chat with the crypto lakehouse (gold data + docs), governed by Unity Catalog
+      source_code_path: ../ai_assistant/app
+      config:
+        command: ["streamlit", "run", "app.py"]
+        env:
+          - name: SERVING_ENDPOINT
+            value: ${var.agent_endpoint}
+          - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+            value: "false"
+      # The app calls the agent with the signed-in user's token (on-behalf-of-user),
+      # so it needs no endpoint permission of its own: readers get CAN_QUERY from the job.
+      # The agent's downstream OBO token is narrowed to the caller's token, so the app
+      # must also hold the scopes the agent declares (SQL and Vector Search).
+      user_api_scopes:
+        - serving.serving-endpoints
+        - sql.statement-execution
+        - sql.warehouses
+        - vectorsearch.vector-search-indexes
+        - vectorsearch.vector-search-endpoints

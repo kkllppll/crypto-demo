@@ -38,6 +38,7 @@ A cryptocurrency medallion lakehouse combining batch OHLC data and streaming pri
     end
 
     DASH["Gold dashboard<br/>filters and analytics"]
+    AI["AI assistant<br/>RAG + UC function tools"]
     K --> BI
     C --> P --> E --> SB
     C --> PZ --> ZR -->|append flow| SB
@@ -47,6 +48,8 @@ A cryptocurrency medallion lakehouse combining batch OHLC data and streaming pri
     SS -->|asset symbols| D
     FO --> DASH
     FT --> DASH
+    FO --> AI
+    FT --> AI
 ```
 
 Batch and streaming run independently and each writes its own silver table (`ohlc_prices`, `ticks_prices`). 
@@ -80,6 +83,8 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 | `gold_pipeline/05_governance.ipynb` | `access_rules`, row filter, column mask, grants; demo cells for RLS/CLS |
 | `gold_pipeline/utilities/gold_transformations.py` | Plain PySpark functions used by gold notebooks; importable from unit tests |
 | `dashboard_queries/gold_dashboard_queries.sql` | SQL datasets of the gold dashboard (latest prices, hourly candles, daily summary, live ticks) |  
+| `ai_assistant/` | AI assistant: knowledge base, vector index, UC function tools, evaluated and served agent, Databricks App; see [ai_assistant/README.md](ai_assistant/README.md) |
+| `databricks.yml`, `resources/` | Databricks Asset Bundle: targets `dev` / `prod`, one resource file per component |
 | `infra_setup.ipynb` | Schemas, volume, secret scope (Unity Catalog setup) |
 | `README.md` | This file |
 
@@ -104,6 +109,7 @@ Batch and streaming run independently and each writes its own silver table (`ohl
    - `gold_pipeline/04_gold_fact_price_tick.ipynb`
 9. Run `gold_pipeline/05_governance.ipynb` for the initial RLS/CLS setup. Execute its demonstration cells separately when demonstrating access restrictions.
 10. Refresh the "Crypto Prices - Gold" dashboard.
+11. AI assistant: `databricks bundle run crypto_ai_assistant`, then `databricks bundle run crypto_assistant_app` (see [ai_assistant/README.md](ai_assistant/README.md)).
 
 ## Schema evolution demo
 

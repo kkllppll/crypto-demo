@@ -1,0 +1,57 @@
+# Databricks Asset Bundle for crypto-demo.
+# Each component adds its resources as resources/*.yml.
+bundle:
+  name: crypto-demo
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog of the medallion
+  gold_schema:
+    default: team_crypto_gold
+  silver_schema:
+    default: team_crypto_silver
+  reader_group:
+    description: Group that reads gold, queries the agent and uses the app
+    default: students
+  warehouse_id:
+    description: SQL warehouse used by the agent's UC function tools
+    lookup:
+      warehouse: Serverless Starter Warehouse
+  llm_endpoint:
+    description: Foundation model endpoint the agent reasons with
+    default: databricks-llama-4-maverick
+  embedding_endpoint:
+    default: databricks-gte-large-en
+  agent_endpoint:
+    description: Model Serving endpoint of the agent
+    default: crypto-assistant-${bundle.target}
+  use_obo:
+    description: Agent queries data as the end user (RLS/CLS apply) instead of as the endpoint
+    default: "true"
+  ai_schedule_status:
+    default: PAUSED
+  notification_emails:
+    type: complex
+    default: []
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://adb-7405604651938730.10.azuredatabricks.net
+    variables:
+      catalog: dbr_dev_ua5816bd
+      agent_endpoint: crypto-assistant-dev-${workspace.current_user.short_name}
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-7405619332572019.19.azuredatabricks.net
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    # catalog comes from CI: BUNDLE_VAR_catalog (GitHub Actions environment "prod")
+    variables:
+      ai_schedule_status: UNPAUSED
