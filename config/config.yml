@@ -81,3 +81,25 @@ gold:
 api:
   url: https://api.kraken.com/0/public/OHLC
   interval: 60
+
+# AI assistant (RAG + tool-calling agent). Job parameters from the bundle
+# override these per target; see ai_assistant/README.md.
+ai:
+  schema: team_crypto_ai
+  kb_table: kb_documents
+  vector_search_endpoint: crypto-assistant-vs
+  vector_index: kb_documents_index
+  embedding_endpoint: databricks-gte-large-en
+  llm_endpoint: databricks-claude-sonnet-4-5
+  model_name: crypto_assistant
+  serving_endpoint: crypto-assistant-dev
+  warehouse_id: ""
+  use_obo: true
+  experiment_path: /Shared/crypto-assistant-dev
+  # minimum mean score per judge; the model is not deployed below these
+  eval_thresholds:
+    safety: 1.0
+    no_financial_advice: 0.9
+    relevance_to_query: 0.8
+    correctness: 0.7
+    retrieval_groundedness: 0.7
