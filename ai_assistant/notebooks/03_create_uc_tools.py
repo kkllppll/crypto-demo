@@ -77,14 +77,17 @@ RETURN
         FROM {GOLD}.fact_ohlc_hourly f
         JOIN {GOLD}.dim_asset a ON f.asset_key = a.asset_key
         JOIN {GOLD}.dim_date  d ON f.date_key  = d.date_key
-        WHERE a.symbol = upper(asset_symbol)
+        WHERE a.symbol = upper(get_daily_summary.asset_symbol)
         GROUP BY a.symbol, d.full_date, d.day_name
+    ),
+    ranked AS (
+        SELECT *, DENSE_RANK() OVER (ORDER BY full_date DESC) AS day_rank FROM daily
     )
     SELECT symbol, full_date, day_name, day_open, day_close, day_low, day_high,
            ROUND((day_close - day_open) / NULLIF(day_open, 0) * 100, 2) AS daily_change_pct,
            volatility_pct, hourly_candles
-    FROM daily
-    QUALIFY DENSE_RANK() OVER (ORDER BY full_date DESC) <= days_back
+    FROM ranked
+    WHERE day_rank <= get_daily_summary.days_back
     ORDER BY full_date DESC
 """)
 
@@ -98,12 +101,17 @@ CREATE OR REPLACE FUNCTION {AI}.get_largest_hourly_moves(
 RETURNS TABLE (symbol STRING, event_time TIMESTAMP, open DOUBLE, close DOUBLE, price_change_pct DOUBLE)
 COMMENT 'Hourly candles of one asset with the largest absolute % change (gold fact_ohlc_hourly).'
 RETURN
-    SELECT a.symbol, f.event_time, f.open, f.close, f.price_change_pct
-    FROM {GOLD}.fact_ohlc_hourly f
-    JOIN {GOLD}.dim_asset a ON f.asset_key = a.asset_key
-    WHERE a.symbol = upper(asset_symbol) AND f.price_change_pct IS NOT NULL
-    QUALIFY ROW_NUMBER() OVER (ORDER BY abs(f.price_change_pct) DESC, f.event_time) <= top_n
-    ORDER BY abs(f.price_change_pct) DESC
+    WITH ranked AS (
+        SELECT a.symbol, f.event_time, f.open, f.close, f.price_change_pct,
+               ROW_NUMBER() OVER (ORDER BY abs(f.price_change_pct) DESC, f.event_time) AS move_rank
+        FROM {GOLD}.fact_ohlc_hourly f
+        JOIN {GOLD}.dim_asset a ON f.asset_key = a.asset_key
+        WHERE a.symbol = upper(get_largest_hourly_moves.asset_symbol) AND f.price_change_pct IS NOT NULL
+    )
+    SELECT symbol, event_time, open, close, price_change_pct
+    FROM ranked
+    WHERE move_rank <= get_largest_hourly_moves.top_n
+    ORDER BY move_rank
 """)
 
 # COMMAND ----------
@@ -123,10 +131,13 @@ RETURN
         SELECT load_date, 'quarantined', quarantine_reason, COUNT(*)
         FROM {SILVER}.ticks_quarantine
         GROUP BY load_date, quarantine_reason
+    ),
+    ranked AS (
+        SELECT *, DENSE_RANK() OVER (ORDER BY load_date DESC) AS day_rank FROM dq
     )
     SELECT load_date, status, reason, ticks
-    FROM dq
-    QUALIFY DENSE_RANK() OVER (ORDER BY load_date DESC) <= days_back
+    FROM ranked
+    WHERE day_rank <= get_data_quality_summary.days_back
     ORDER BY load_date DESC, status DESC, ticks DESC
 """)
 
