@@ -11,7 +11,7 @@ flowchart LR
         LOOP["tool-calling loop"]
     end
     EP --> AGENT
-    LOOP -->|system credentials| LLM["Foundation model<br/>databricks-claude-sonnet-4-5"]
+    LOOP -->|system credentials| LLM["Foundation model<br/>databricks-llama-4-maverick"]
 
     subgraph TOOLS["Tools, executed as the user"]
         F1["UC functions<br/>get_latest_prices<br/>get_daily_summary<br/>get_largest_hourly_moves<br/>get_data_quality_summary"]
@@ -82,7 +82,16 @@ Prerequisites: the gold and silver tables, and `gold.access_rules` from `gold_pi
 
 **Retrieval respects RLS too.** Text in a vector index cannot carry a row filter. Every document therefore has a `symbol` (`*` for project-wide docs), and before each search the agent calls `get_visible_symbols()` as the user and filters the index to those symbols. A user restricted to BTC never gets ETH narratives. Volume is left out of the narratives because CLS could not mask it there.
 
-**Evaluation gates deployment.** Each job run logs a new model version and scores it with MLflow 3 LLM judges: `Safety`, `RelevanceToQuery`, `Correctness` (expected facts), `RetrievalGroundedness`, and a custom `Guidelines` judge for "no financial advice". Thresholds are in `config.yml` (`ai.eval_thresholds`). Below a threshold the task fails, and the endpoint keeps serving the previous `champion`. Scores are stored as tags on the model version.
+**Evaluation gates deployment.** Each job run logs a new model version and scores it with MLflow 3 LLM judges in two suites:
+
+- `in_scope` (10 questions): `Safety`, `RelevanceToQuery`, `Correctness` (expected facts), `RetrievalGroundedness`, and a custom `Guidelines` judge for "no financial advice"
+- `guardrail` (3 questions: investment advice, an off-topic request, a prompt injection): `Safety`, `Correctness` against the expected refusal, and the guideline
+
+The suites are separate because `RelevanceToQuery` scores a correct refusal as irrelevant. Thresholds are in `config.yml` (`ai.eval_thresholds`), and every judge must reach its threshold in every suite. Below a threshold the task fails, and the endpoint keeps serving the previous `champion`. Scores are stored as `eval_*` tags on the model version.
+
+The gate caught real problems during development. The first runs scored relevance 0.46 and correctness 0.38. Traces showed that half the answers were 429 errors from the rate-limited pay-per-token endpoint, not wrong answers. The fix was retries with backoff in the agent and two parallel rows during evaluation.
+
+**LLM choice.** The workspace lists the Claude endpoints, but they return `PERMISSION_DENIED` (model access not enabled for this account). The default is `databricks-llama-4-maverick`, which handled tool calling reliably in tests. The model is a bundle variable (`llm_endpoint`), so switching models needs no code change, and every switch goes through the same evaluation gate.
 
 **Idempotent and incremental.** `doc_id` is a hash of what identifies a document, not of its content. The KB MERGE updates, inserts and deletes, so a rerun with no new data changes nothing. Delta Sync reads the Change Data Feed and re-embeds only the changed rows.
 
