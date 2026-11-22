@@ -23,7 +23,7 @@ resources:
 
   experiments:
     crypto_assistant:
-      name: ${workspace.root_path}/experiments/crypto-assistant
+      name: ${workspace.root_path}/crypto-assistant-experiment
 
   jobs:
     crypto_ai_assistant:
