@@ -9,6 +9,8 @@ A cryptocurrency medallion lakehouse combining batch OHLC data and streaming pri
     C["CoinGecko API<br/>live prices"]
     P["Producer<br/>price ticks"]
     E["Event Hub<br/>Kafka interface"]
+    PZ["Producer<br/>Zerobus SDK"]
+    ZR[("Landing: ticks_zerobus_raw<br/>Zerobus target")]
 
     subgraph BATCH["Batch notebooks"]
         BI["Batch ingestion"]
@@ -38,6 +40,7 @@ A cryptocurrency medallion lakehouse combining batch OHLC data and streaming pri
     DASH["Gold dashboard<br/>filters and analytics"]
     K --> BI
     C --> P --> E --> SB
+    C --> PZ --> ZR -->|append flow| SB
     BS -->|current versions only| FO
     SS --> FT
     BS -->|asset symbols| D
@@ -55,11 +58,16 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 | `batch_pipeline/01_batch_ohlc_ingestion.ipynb` | Loads hourly OHLC data from Kraken API (BTC, ETH, SOL) into `team_crypto_bronze.ohlc_batch`тusing append-only writes; adds a stable `entry_id` and ingestion timestamp |
 | `batch_pipeline/02_silver_ohlc.ipynb` | Processes the latest Bronze load, normalizes and deduplicates records, and maintains SCD Type 2 history in `team_crypto_silver.ohlc_prices` |
 | `streaming_pipeline/01_producer_price_ticks.ipynb` | Polls CoinGecko `simple/price` every N seconds, sends JSON to Event Hub over the Kafka protocol. `bad_every` widget injects bad events for the data-quality demo, `include_volume` adds `volume_24h` (schema evolution twist) |
+| `streaming_pipeline/00_zerobus_setup.ipynb` | Zerobus landing table `team_crypto_bronze.ticks_zerobus_raw` and grants for the producer's service principal; run once per environment |
+| `streaming_pipeline/05_producer_zerobus.ipynb` | Same CoinGecko polling as `01_producer_price_ticks`, but sends ticks straight into `ticks_zerobus_raw` with the Zerobus SDK (no Event Hub) |
 | `lakeflow_pipeline/transformations/ticks_bronze.py` | Lakeflow streaming table: Event Hub (Kafka) → `team_crypto_bronze.ticks_bronze`, raw JSON plus Event Hub metadata |
+| `lakeflow_pipeline/transformations/ticks_bronze_zerobus.py` | Lakeflow append flow: `ticks_zerobus_raw` → the same `ticks_bronze`, with `source = 'zerobus'` |
 | `lakeflow_pipeline/transformations/ticks_silver.py` | Lakeflow: bronze → private `_ticks_validated` → `team_crypto_silver.ticks_silver` (valid, deduplicated ticks) |
 | `lakeflow_pipeline/transformations/ticks_quarantine.py` | Lakeflow: invalid ticks with original JSON and rejection reasons → `team_crypto_silver.ticks_quarantine` |
 | `lakeflow_pipeline/utilities/ticks_transformations.py` | Plain PySpark functions used by the pipeline (`parse_and_validate_ticks`, `normalize_symbol`, `RULES`); importable from unit tests |
+| `lakeflow_pipeline/utilities/zerobus_transformations.py` | `zerobus_to_bronze`: shapes Zerobus landing rows like Event Hub bronze rows; importable from unit tests |
 | `lakeflow_pipeline/checks/streaming_quality_checks.ipynb` | Manual checks across bronze / silver / quarantine; catalog and schemas are widgets |
+| `lakeflow_pipeline/checks/zerobus_checks.ipynb` | Checks that Zerobus records reach bronze and silver and none are lost (`producer_seq` without gaps) |
 | `streaming_pipeline/02_consumer_bronze_ticks.ipynb` | Structured Streaming from Event Hub (Kafka format) into `team_crypto_bronze.ticks_stream`, stored as raw JSON (no fixed schema — needed for the schema evolution demo) |
 | `streaming_pipeline/03_schema_evolution_twist.ipynb` | Demo helper: checks that a new field reaches silver without restarting the stream |
 | `streaming_pipeline/04_silver_prices.ipynb` | Infers schema from the newest bronze row (`F.schema_of_json`), normalizes symbol (bitcoin → BTC etc.), MERGE into `team_crypto_silver.ticks_prices` |
@@ -78,18 +86,24 @@ Batch and streaming run independently and each writes its own silver table (`ohl
 ## Run order
 
 1. `infra_setup.ipynb` — once, by whoever owns infra
-2. `batch_pipeline/01_batch_ohlc_ingestion.ipynb` → `batch_pipeline/02_silver_ohlc.ipynb`
-3. Run `streaming_pipeline/01_producer_price_ticks.ipynb` to send events, then run the Lakeflow pipeline `team-crypto-ticks-streaming` to update streaming Bronze, Silver and Quarantine.
-4. Optionally run `lakeflow_pipeline/checks/streaming_quality_checks.ipynb` against the configured schemas.
-5. Initialize Gold once:
+2. `streaming_pipeline/00_zerobus_setup.ipynb` — once per environment, before the first Lakeflow pipeline run (the pipeline reads the Zerobus landing table)
+3. `batch_pipeline/01_batch_ohlc_ingestion.ipynb` → `batch_pipeline/02_silver_ohlc.ipynb`
+4. Send events with one or both producers:
+   - `streaming_pipeline/01_producer_price_ticks.ipynb` (Event Hub)
+   - `streaming_pipeline/05_producer_zerobus.ipynb` (Zerobus)
+5. Run the Lakeflow pipeline `team-crypto-ticks-streaming` to update streaming Bronze, Silver and Quarantine.
+6. Optionally run the checks against the configured schemas:
+   - `lakeflow_pipeline/checks/streaming_quality_checks.ipynb`
+   - `lakeflow_pipeline/checks/zerobus_checks.ipynb`
+7. Initialize Gold once:
    - `gold_pipeline/00_gold_setup.ipynb`
    - `gold_pipeline/01_gold_dim_date.ipynb`
-6. After both Silver paths are ready, run:
+8. After both Silver paths are ready, run:
    - `gold_pipeline/02_gold_dims.ipynb`
    - `gold_pipeline/03_gold_fact_ohlc_hourly.ipynb`
    - `gold_pipeline/04_gold_fact_price_tick.ipynb`
-7. Run `gold_pipeline/05_governance.ipynb` for the initial RLS/CLS setup. Execute its demonstration cells separately when demonstrating access restrictions.
-8. Refresh the "Crypto Prices - Gold" dashboard.
+9. Run `gold_pipeline/05_governance.ipynb` for the initial RLS/CLS setup. Execute its demonstration cells separately when demonstrating access restrictions.
+10. Refresh the "Crypto Prices - Gold" dashboard.
 
 ## Schema evolution demo
 
@@ -253,3 +267,50 @@ Lakeflow Silver additionally removes duplicate business keys using `symbol, even
 Checkpointing and deduplication serve different purposes: checkpointing tracks processed source records, while deduplication removes repeated business events.
 
 Changing the source type, such as replacing a Delta test source with Kafka, requires a compatible fresh streaming state. A full refresh resets state and rebuilds streaming tables from currently available source data; it should not be used as an ordinary rerun.
+
+
+
+## Advanced capability: Zerobus Ingest
+
+A second transport for price ticks, added to the Lakeflow pipeline `team-crypto-ticks-streaming`: new files only, existing transformations are unchanged.
+
+```mermaid
+  flowchart LR
+    C["CoinGecko API"]
+    P1["01_producer_price_ticks<br/>Event Hub (Kafka)"]
+    P2["05_producer_zerobus<br/>Zerobus Ingest"]
+    Z[("ticks_zerobus_raw<br/>landing table")]
+    B[("ticks_bronze")]
+    S[("ticks_silver")]
+    C --> P1 -->|default flow| B
+    C --> P2 --> Z -->|append flow| B
+    B --> S
+```
+
+| File | What it does |
+|---|---|
+| `streaming_pipeline/00_zerobus_setup.ipynb` | Creates the Zerobus landing table `ticks_zerobus_raw` (`value` raw JSON plus `producer_id`, `producer_seq`, `producer_sent_at`) and grants the service principal `USE CATALOG`, `USE SCHEMA`, `MODIFY, SELECT`; run once per environment |
+| `streaming_pipeline/05_producer_zerobus.ipynb` | Same CoinGecko polling, payload and `bad_every` / `include_volume` widgets as `01_producer_price_ticks`, but pushes records straight into Delta with the Zerobus SDK; service principal credentials come from the Key Vault-backed secret scope (`team-crypto-zerobus-client-id`, `team-crypto-zerobus-client-secret`) |
+| `lakeflow_pipeline/transformations/ticks_bronze_zerobus.py` | Append flow `ticks_bronze_from_zerobus`: Zerobus rows into the existing `ticks_bronze` with `source = 'zerobus'` and NULL Event Hub metadata |
+| `lakeflow_pipeline/utilities/zerobus_transformations.py` | `zerobus_to_bronze`, shapes landing rows like Event Hub bronze rows; covered by `tests/test_zerobus_transformations.py` |
+| `lakeflow_pipeline/checks/zerobus_checks.ipynb` | Assertions: Zerobus records move from the landing table to bronze (never more than landed) and on to silver; no gaps in `producer_seq` (no lost records) |
+
+Optional pipeline configuration key: `zerobus_table` (default `ticks_zerobus_raw`).
+
+### One-time setup
+
+1. Service principal `team-crypto-zerobus-sp` (Databricks managed, only the Workspace access entitlement) with an OAuth secret scoped to `all-apis`: with a `zerobus`-only scope the SDK is refused with 403.
+2. Its application ID and secret in Key Vault `kvua5816bd` as `team-crypto-zerobus-client-id` and `team-crypto-zerobus-client-secret`. The vault is shared by the whole course, so the names carry the team prefix. `team-crypto-scope` is Key Vault-backed, so secrets are added in the Azure Portal, not with `databricks secrets put-secret`.
+3. `00_zerobus_setup.ipynb` with the application ID in the `zerobus_sp_app_id` widget.
+4. Producer widget `zerobus_endpoint`: `https://<workspace-id>.zerobus.<region>.azuredatabricks.net`.
+
+
+
+
+### Design decisions and trade-offs
+
+- **Append flow instead of a UNION in bronze**: the Event Hub flow stays untouched and each source has its own checkpoint, so a source can be added or removed without rewriting existing code.
+- **Raw JSON in the landing table**: Zerobus never evolves the target table schema; keeping the payload as a string means the `volume_24h` schema-evolution twist works for both transports with no DDL change.
+- **At-least-once delivery**: Zerobus can deliver a record twice on retry; duplicates are removed by the existing watermark deduplication in silver.
+- **Zerobus vs Event Hub**: no message bus to run or pay for and no Kafka configuration, at the cost of a regional, Databricks-specific endpoint and no fan-out to other consumers.
+- **Parallel run, not a switch**: both transports run side by side, the first step of a migration. Moving fully to Zerobus means stopping `01_producer_price_ticks`; no pipeline code changes.
