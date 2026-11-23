@@ -107,3 +107,16 @@ jobs:
       - name: Validate YAML syntax
         run: |
           python -c "import glob, yaml; files = ['databricks.yml'] + glob.glob('resources/*.yml'); [yaml.safe_load(open(f, encoding='utf-8')) for f in files]; print(f'Validated {len(files)} YAML files')"
+    
+  ci-gate:
+    name: CI Quality Gate
+    runs-on: ubuntu-latest
+
+    needs:
+      - unit-tests
+      - ai-tests
+      - dab-validation
+
+    steps:
+      - name: Confirm CI checks
+        run: echo "All required CI checks passed."
