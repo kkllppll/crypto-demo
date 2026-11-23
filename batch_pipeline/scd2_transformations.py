@@ -11,9 +11,7 @@ def classify_scd2_records(source_df, target_df, business_key="entry_id"):
     - _hash of the business attributes
     """
 
-    current_target = target_df.filter(
-        F.col("is_current") == True
-    )
+    current_target = target_df.filter(F.col("is_current") == True)
 
     comparison = source_df.alias("s").join(
         current_target.alias("t"),
@@ -21,8 +19,7 @@ def classify_scd2_records(source_df, target_df, business_key="entry_id"):
         "left"
     )
 
-    result = comparison.select(
-        "s.*",
+    result = comparison.select("s.*",
         F.when(
             F.col(f"t.{business_key}").isNull(),
             F.lit("NEW")
