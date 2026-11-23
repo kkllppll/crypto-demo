@@ -107,7 +107,17 @@ jobs:
       - name: Validate YAML syntax
         run: |
           python -c "import glob, yaml; files = ['databricks.yml'] + glob.glob('resources/*.yml'); [yaml.safe_load(open(f, encoding='utf-8')) for f in files]; print(f'Validated {len(files)} YAML files')"
-    
+        
+      - name: Check Databricks authentication
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks current-user me
+
+
   ci-gate:
     name: CI Quality Gate
     runs-on: ubuntu-latest
