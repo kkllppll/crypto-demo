@@ -84,4 +84,19 @@ jobs:
             tests/test_ai_settings.py \
             tests/test_kb_builder.py \
             -v -ra
-        
+    
+
+  dab-validation:
+    name: Databricks CLI Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Check Databricks CLI version
+        run: databricks version
+
