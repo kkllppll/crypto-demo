@@ -46,6 +46,7 @@ jobs:
             tests/test_ticks_transformations.py \
             tests/test_gold_transformations.py \
             tests/test_zerobus_transformations.py \
+            tests/test_silver_scd2.py \
             -v
     
   ai-tests:
@@ -83,3 +84,4 @@ jobs:
             tests/test_ai_settings.py \
             tests/test_kb_builder.py \
             -v -ra
+        
