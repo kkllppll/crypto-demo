@@ -4,6 +4,7 @@ name: Crypto Lakehouse CI
 on:
   push:
     branches:
+      - main
       - feature/github-actions-ci-cd
   pull_request:
     branches:
