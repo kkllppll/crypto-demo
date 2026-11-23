@@ -126,6 +126,15 @@ jobs:
           ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
         run: databricks bundle validate -t dev
 
+      - name: Preview DEV deployment plan
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle plan -t dev
+
 
   ci-gate:
     name: CI Quality Gate
