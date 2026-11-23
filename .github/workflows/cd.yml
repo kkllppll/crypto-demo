@@ -1,0 +1,38 @@
+
+name: Crypto Lakehouse CD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-readiness:
+    name: Deployment Readiness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate DEV Bundle
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle validate -t dev
+
+      - name: Preview DEV Deployment
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle plan -t dev
