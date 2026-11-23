@@ -87,7 +87,7 @@ jobs:
     
 
   dab-validation:
-    name: Databricks CLI Check
+    name: Databricks Bundle Validation
     runs-on: ubuntu-latest
 
     steps:
@@ -116,6 +116,15 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
         run: databricks current-user me
+
+      - name: Validate DEV Databricks Bundle
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle validate -t dev
 
 
   ci-gate:
