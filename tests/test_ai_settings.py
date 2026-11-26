@@ -6,9 +6,9 @@ CONFIG = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "confi
 
 def test_defaults_come_from_config_yml():
     s = resolve(CONFIG, {})
-    assert s.catalog == dbutils.widgets.get("catalog")
-    assert s.gold == f"{dbutils.widgets.get("catalog")}.{CONFIG['gold']['schema']}"
-    assert s.kb_table == f"{dbutils.widgets.get("catalog")}.{CONFIG['ai']['schema']}.kb_documents"
+    assert s.catalog == dbutils.widgets.get('catalog')
+    assert s.gold == f"{dbutils.widgets.get('catalog')}.{CONFIG['gold']['schema']}"
+    assert s.kb_table == f"{dbutils.widgets.get('catalog')}.{CONFIG['ai']['schema']}.kb_documents"
     assert s.vector_index.endswith(".kb_documents_index")
     assert s.use_obo is True
     assert s.deploy is True
