@@ -1,13 +1,27 @@
+from pathlib import Path
+import os
+import yaml
+
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-catalog = spark.conf.get("catalog")
-bronze_schema = spark.conf.get("bronze_schema")
-eventhub_namespace = spark.conf.get("eventhub_namespace")
-eventhub_name = spark.conf.get("eventhub_name")
-secret_scope = spark.conf.get("secret_scope")
+SCRIPT_PATH = Path(__file__).resolve()
 
-connection_str = dbutils.secrets.get(scope=secret_scope, key="eventhub-connection-string")
+PROJECT_ROOT = SCRIPT_PATH.parents[2]
+CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+catalog = config["catalog"]
+bronze_schema = config["bronze"]["schema"]
+bronze_table = config["bronze"]["eventhub_ticks"]
+eventhub = config["streaming"]["eventhub"]
+eventhub_namespace = eventhub["namespace"]
+eventhub_name = eventhub["name"]
+secret_scope = config["streaming"]["secret_scope"]
+
+connection_str = dbutils.secrets.get(scope=secret_scope, key=eventhub["connection_secret_key"])
 
 jaas_config = (
     "kafkashaded.org.apache.kafka.common.security.plain.PlainLoginModule required "
@@ -15,19 +29,19 @@ jaas_config = (
 )
 
 kafka_options = {
-    "kafka.bootstrap.servers": f"{eventhub_namespace}.servicebus.windows.net:9093",
+    "kafka.bootstrap.servers": f"{eventhub_namespace}.servicebus.windows.net:{eventhub['port']}",
     "subscribe": eventhub_name,
     "kafka.sasl.mechanism": "PLAIN",
     "kafka.security.protocol": "SASL_SSL",
     "kafka.sasl.jaas.config": jaas_config,
-    "startingOffsets": "earliest",
+    "startingOffsets": eventhub["starting_offsets"],
     # Event Hub drops events after the retention period; don't fail the stream on that gap
-    "failOnDataLoss": "false",
+    "failOnDataLoss": str(eventhub["fail_on_data_loss"]).lower(),
 }
 
 
 @dp.table(
-    name=f"{catalog}.{bronze_schema}.ticks_bronze",
+    name=f"{catalog}.{bronze_schema}.{bronze_table}",
     comment="Raw price ticks from Event Hub, payload kept as JSON string",
     table_properties={"quality": "bronze"},
 )
@@ -42,7 +56,7 @@ def ticks_bronze():
             F.col("partition").alias("eventhub_partition"),
             F.col("offset").alias("eventhub_offset"),
             F.col("timestamp").alias("eventhub_timestamp"),
-            F.lit("eventhub").alias("source"),
+            F.lit(eventhub["source_label"]).alias("source"),
             F.current_timestamp().alias("ingestion_timestamp"),
             F.current_date().alias("load_date"),
         )

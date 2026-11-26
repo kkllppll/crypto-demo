@@ -1,0 +1,29 @@
+# Producer 2 of 2: polls CoinGecko and pushes ticks straight to Delta via Zerobus
+# into ticks_zerobus_raw. The Lakeflow append flow ticks_bronze_from_zerobus
+# moves them into ticks_bronze, so no separate bronze job is needed.
+# Continuous job; safe to run at the same time as producer_eventhub, and keeps
+# bronze fed on its own if Event Hub is down.
+# Prerequisite: streaming_pipeline/00_zerobus_setup (landing table + grants).
+
+resources:
+  jobs:
+    producer_zerobus:
+      name: crypto-producer-zerobus-${bundle.target}
+      description: CoinGecko -> Zerobus -> ticks_zerobus_raw, always on
+      max_concurrent_runs: 1
+      tags:
+        project: crypto-demo
+        component: ingestion-zerobus
+      continuous:
+        pause_status: ${var.producers_status}
+      email_notifications:
+        on_failure: ${var.notification_emails}
+      parameters:
+        - {name: catalog, default: "${var.catalog}"}
+        - {name: bronze_schema, default: "${var.bronze_schema}"}
+        - {name: silver_schema, default: "${var.silver_schema}"}
+        - {name: gold_schema, default: "${var.gold_schema}"}
+      tasks:
+        - task_key: produce_zerobus
+          notebook_task:
+            notebook_path: ../streaming_pipeline/05_producer_zerobus.ipynb

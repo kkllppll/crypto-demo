@@ -18,7 +18,7 @@ resources:
 
   vector_search_endpoints:
     crypto_kb:
-      name: crypto-assistant-vs-${bundle.target}
+      name: ${var.vector_search_endpoint_name}
       endpoint_type: STANDARD
 
   experiments:
@@ -78,7 +78,7 @@ resources:
 
   apps:
     crypto_assistant_app:
-      name: crypto-assistant-${bundle.target}
+      name: ${var.app_name}
       description: Chat with the crypto lakehouse (gold data + docs), governed by Unity Catalog
       source_code_path: ../ai_assistant/app
       config:

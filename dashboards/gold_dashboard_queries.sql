@@ -35,7 +35,7 @@ SELECT
 FROM dbr_dev_ua5816bd.team_crypto_gold.fact_ohlc_hourly f
 JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_asset  a ON f.asset_key  = a.asset_key
 JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_date   d ON f.date_key   = d.date_key
-JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_source s ON f.source_key = s.source_key
+JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_source s ON f.source_key = s.source_key;
 
 -- Dataset: daily_summary -> "Daily change, %", "Average daily volatility, %"
 SELECT
@@ -54,7 +54,7 @@ SELECT
 FROM dbr_dev_ua5816bd.team_crypto_gold.fact_ohlc_hourly f
 JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_asset a ON f.asset_key = a.asset_key
 JOIN dbr_dev_ua5816bd.team_crypto_gold.dim_date  d ON f.date_key  = d.date_key
-GROUP BY a.symbol, d.full_date, d.day_name, d.is_weekend
+GROUP BY a.symbol, d.full_date, d.day_name, d.is_weekend;
 
 -- Dataset: live_ticks -> "BTC - live price (streaming)"
 SELECT

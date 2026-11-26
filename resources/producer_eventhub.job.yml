@@ -1,0 +1,27 @@
+# Producer 1 of 2: polls CoinGecko and sends ticks to Event Hub (Kafka protocol).
+# Read by the Lakeflow pipeline team-crypto-ticks-streaming (ticks_bronze.py).
+# Continuous job: when a run ends (after `iterations` polls) the next one starts.
+# Runs side by side with producer_zerobus; neither depends on the other.
+
+resources:
+  jobs:
+    producer_eventhub:
+      name: crypto-producer-eventhub-${bundle.target}
+      description: CoinGecko -> Event Hub crypto-ticks, always on
+      max_concurrent_runs: 1
+      tags:
+        project: crypto-demo
+        component: ingestion-eventhub
+      continuous:
+        pause_status: ${var.producers_status}
+      email_notifications:
+        on_failure: ${var.notification_emails}
+      parameters:
+        - {name: catalog, default: "${var.catalog}"}
+        - {name: bronze_schema, default: "${var.bronze_schema}"}
+        - {name: silver_schema, default: "${var.silver_schema}"}
+        - {name: gold_schema, default: "${var.gold_schema}"}
+      tasks:
+        - task_key: produce_eventhub
+          notebook_task:
+            notebook_path: ../streaming_pipeline/01_producer_price_ticks.ipynb

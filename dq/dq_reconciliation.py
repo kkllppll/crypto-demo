@@ -1,12 +1,18 @@
-dbutils.widgets.text("catalog", "dbr_dev_ua5816bd")
-dbutils.widgets.text("bronze_schema", "team_crypto_bronze")
-dbutils.widgets.text("silver_schema", "team_crypto_silver")
-dbutils.widgets.text("gold_schema", "team_crypto_gold")
+from pathlib import Path
+import os
+import yaml
+SCRIPT_PATH = Path(__file__).resolve()
 
-CATALOG = dbutils.widgets.get("catalog")
-BRONZE = f"{CATALOG}.{dbutils.widgets.get('bronze_schema')}"
-SILVER = f"{CATALOG}.{dbutils.widgets.get('silver_schema')}"
-GOLD = f"{CATALOG}.{dbutils.widgets.get('gold_schema')}"
+PROJECT_ROOT = SCRIPT_PATH.parents[1]
+CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+CATALOG = config["catalog"]
+BRONZE = config["bronze"]["schema"]
+SILVER = config["silver"]["schema"]
+GOLD = config["gold"]["schema"]
 
 CHECKS = [
     (

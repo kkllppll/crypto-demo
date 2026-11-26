@@ -1,9 +1,8 @@
-catalog: dbr_dev_ua5816bd
-
 bronze:
-  schema: team_crypto_bronze
-  table: ohlc_batch
-
+  batch_table: ohlc_batch
+  eventhub_ticks: ticks_bronze
+  zerobus_ticks: ticks_zerobus_raw
+  
   columns:
     - entry_id
     - symbol
@@ -20,8 +19,10 @@ bronze:
     - ingestion_timestamp
 
 silver:
-  schema: team_crypto_silver
   table: ohlc_prices
+  ticks_table: ticks_silver
+  quarantine_table: ticks_quarantine
+  validated_view: _ticks_validated
 
   columns:
     - entry_id
@@ -42,8 +43,6 @@ silver:
   business_key: entry_id
 
 gold:
-  schema: team_crypto_gold
-
   tables:
     fact_ohlc_hourly: fact_ohlc_hourly
     fact_price_tick: fact_price_tick
@@ -81,6 +80,46 @@ gold:
 api:
   url: https://api.kraken.com/0/public/OHLC
   interval: 60
+
+streaming:
+  api_url: https://api.coingecko.com/api/v3/simple/price
+  symbols:
+    - bitcoin
+    - ethereum
+    - solana
+  symbol_map:
+    bitcoin: BTC
+    ethereum: ETH
+    solana: SOL
+    btc: BTC
+    eth: ETH
+    sol: SOL
+  source_label: streaming
+  quote_currency: USD
+  watermark: 10 minutes
+  future_tolerance: 5 MINUTES
+  min_event_epoch: 1230768000.0
+  max_event_epoch: 4102444799.0
+  poll_seconds: 10
+  iterations: 30
+  bad_every: 0
+  include_volume: false
+  secret_scope: team-crypto-scope
+
+  eventhub:
+    namespace: evhua5816bd
+    name: crypto-ticks
+    connection_secret_key: eventhub-connection-string
+    port: 9093
+    starting_offsets: earliest
+    fail_on_data_loss: "false"
+    source_label: eventhub
+
+  zerobus:
+    endpoint: https://7405604651938730.zerobus.eastus.azuredatabricks.net
+    client_id_secret_key: team-crypto-zerobus-client-id
+    client_secret_secret_key: team-crypto-zerobus-client-secret
+    source_label: zerobus
 
 # AI assistant (RAG + tool-calling agent). Job parameters from the bundle
 # override these per target; see ai_assistant/README.md.

@@ -1,5 +1,3 @@
-# Databricks Asset Bundle for crypto-demo.
-# Each component adds its resources as resources/*.yml.
 bundle:
   name: crypto-demo
 
@@ -9,49 +7,109 @@ include:
 variables:
   catalog:
     description: Unity Catalog catalog of the medallion
-  gold_schema:
-    default: team_crypto_gold
+
+  bronze_schema:
+    description: Bronze schema
+
   silver_schema:
-    default: team_crypto_silver
+    description: Silver schema
+
+  gold_schema:
+    description: Gold schema
+
   reader_group:
     description: Group that reads gold, queries the agent and uses the app
     default: students
+
   warehouse_id:
     description: SQL warehouse used by the agent's UC function tools
     lookup:
       warehouse: Serverless Starter Warehouse
+
   llm_endpoint:
     description: Foundation model endpoint the agent reasons with
     default: databricks-llama-4-maverick
+
   embedding_endpoint:
     default: databricks-gte-large-en
+
   agent_endpoint:
     description: Model Serving endpoint of the agent
     default: crypto-assistant-${bundle.target}
+
+  vector_search_endpoint_name:
+    description: Vector Search endpoint of the knowledge base
+    default: crypto-assistant-vs-${bundle.target}
+
+  app_name:
+    description: Databricks App name, lowercase letters, digits and hyphens, max 30 chars
+    default: crypto-assistant-${bundle.target}
+
   use_obo:
     description: Agent queries data as the end user (RLS/CLS apply) instead of as the endpoint
     default: "true"
+
   ai_schedule_status:
     default: PAUSED
+
   notification_emails:
     type: complex
     default: []
 
+  service_principal_name:
+    default: d1a2118a-1d70-44cf-ba58-ea3454da6727
+
+  ticks_pipeline_id:
+    description: Existing Lakeflow pipeline that builds ticks_bronze / ticks_silver / ticks_quarantine
+    lookup:
+      pipeline: team-crypto-ticks-streaming
+
+  producers_status:
+    description: PAUSED / UNPAUSED for the two continuous producer jobs
+    default: PAUSED
+
+  medallion_schedule_status:
+    default: PAUSED
+
 targets:
   dev:
     mode: development
+
     default: true
+
     workspace:
-      host: https://adb-7405604651938730.10.azuredatabricks.net
+      host: https://adb-7405604651938730.10.azuredatabricks.net/
+
     variables:
       catalog: dbr_dev_ua5816bd
+      bronze_schema: team_crypto_bronze
+      silver_schema: team_crypto_silver
+      gold_schema: team_crypto_gold
       agent_endpoint: crypto-assistant-dev-${workspace.current_user.short_name}
+      vector_search_endpoint_name: crypto-assistant-vs-${workspace.current_user.domain_friendly_name}
+      app_name: crypto-assistant-${workspace.current_user.domain_friendly_name}
 
   prod:
     mode: production
+
+    run_as:
+      service_principal_name: ${var.service_principal_name}
+    
+    permissions:
+      - user_name: art.gulidov@softserve.academy
+        level: CAN_MANAGE
+
+      - service_principal_name: ${var.service_principal_name}
+        level: CAN_MANAGE
+
     workspace:
-      host: https://adb-7405619332572019.19.azuredatabricks.net
+      host: https://adb-7405619332572019.19.azuredatabricks.net/
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
-    # catalog comes from CI: BUNDLE_VAR_catalog (GitHub Actions environment "prod")
+
     variables:
+      catalog: dbr_dev_ua5816bd
+      bronze_schema: prod_team_crypto_bronze
+      silver_schema: prod_team_crypto_silver
+      gold_schema: prod_team_crypto_gold
+      agent_endpoint: crypto-assistant-dev-${workspace.current_user.short_name}
       ai_schedule_status: UNPAUSED

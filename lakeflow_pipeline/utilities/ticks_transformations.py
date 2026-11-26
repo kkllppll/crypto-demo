@@ -1,6 +1,23 @@
+from pathlib import Path
+import os
+import yaml
+
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, StructField, StructType
+
+SCRIPT_PATH = Path(__file__).resolve()
+
+PROJECT_ROOT = SCRIPT_PATH.parents[2]
+CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+
+with open(CONFIG_PATH, "r") as f:
+    config = yaml.safe_load(f)
+
+STREAMING = config["streaming"]
+FUTURE_TOLERANCE = STREAMING["future_tolerance"]
+MIN_EVENT_EPOCH = float(STREAMING["min_event_epoch"])
+MAX_EVENT_EPOCH = float(STREAMING["max_event_epoch"])
 
 # how to understand value: expected rows
 PAYLOAD_SCHEMA = StructType([
@@ -12,14 +29,7 @@ PAYLOAD_SCHEMA = StructType([
 ])
 
 # only listed symbols are accepted; anything else gets NULL and goes to quarantine (known_symbol)
-SYMBOL_MAP = {
-    "bitcoin": "BTC",
-    "ethereum": "ETH",
-    "solana": "SOL",
-    "btc": "BTC",
-    "eth": "ETH",
-    "sol": "SOL",
-}
+SYMBOL_MAP = {str(k).lower(): v for k, v in STREAMING["symbol_map"].items()}
 
 # criteria for a good entry
 RULES = {
@@ -27,7 +37,7 @@ RULES = {
     "known_symbol": "symbol IS NOT NULL",
     "positive_finite_price": "price_usd IS NOT NULL AND NOT isnan(price_usd) AND price_usd > 0 AND price_usd < CAST('Infinity' AS DOUBLE)",
     "valid_event_time": "event_time IS NOT NULL",
-    "not_in_future": "event_time IS NOT NULL AND event_time <= ingestion_timestamp + INTERVAL 5 MINUTES",
+    "not_in_future": f"event_time IS NOT NULL AND event_time <= ingestion_timestamp + INTERVAL {FUTURE_TOLERANCE}",
 }
 
 
@@ -51,7 +61,7 @@ def parse_and_validate_ticks(bronze: DataFrame) -> DataFrame:
         # Convert only values within the 2009–2099 range (protective restriction)
         # If a value is outside this range or is NULL, event_time will be NULL
         .withColumn("event_time", F.when(
-            F.col("event_seconds").between(1230768000.0, 4102444799.0),
+            F.col("event_seconds").between(MIN_EVENT_EPOCH, MAX_EVENT_EPOCH),
             F.timestamp_seconds("event_seconds"),
         ))
     )
