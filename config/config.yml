@@ -1,5 +1,6 @@
 bronze:
   batch_table: ohlc_batch
+  raw_volume: raw_data
   eventhub_ticks: ticks_bronze
   zerobus_ticks: ticks_zerobus_raw
   

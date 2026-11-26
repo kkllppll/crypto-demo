@@ -3,7 +3,7 @@
 # moves them into ticks_bronze, so no separate bronze job is needed.
 # Continuous job; safe to run at the same time as producer_eventhub, and keeps
 # bronze fed on its own if Event Hub is down.
-# Prerequisite: streaming_pipeline/00_zerobus_setup (landing table + grants).
+# The setup task creates the landing table and grants before every run.
 
 resources:
   jobs:
@@ -24,6 +24,16 @@ resources:
         - {name: silver_schema, default: "${var.silver_schema}"}
         - {name: gold_schema, default: "${var.gold_schema}"}
       tasks:
+        - task_key: setup
+          run_job_task:
+            job_id: ${resources.jobs.crypto_setup.id}
+            job_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              silver_schema: ${var.silver_schema}
+              gold_schema: ${var.gold_schema}
+              service_principal: ${var.service_principal_name}
         - task_key: produce_zerobus
+          depends_on: [{task_key: setup}]
           notebook_task:
             notebook_path: ../streaming_pipeline/05_producer_zerobus.ipynb

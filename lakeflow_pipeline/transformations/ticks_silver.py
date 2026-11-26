@@ -15,10 +15,10 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 
-catalog = config["catalog"]
-bronze_schema = config["bronze"]["schema"]
+catalog = spark.conf.get("catalog")
+bronze_schema = spark.conf.get("bronze_schema")
 bronze_table = config["bronze"]["eventhub_ticks"]
-silver_schema = config["silver"]["schema"]
+silver_schema = spark.conf.get("silver_schema")
 silver_table = config["silver"]["ticks_table"]
 validated_view = config["silver"]["validated_view"]
 streaming = config["streaming"]

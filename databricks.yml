@@ -93,10 +93,49 @@ targets:
     mode: production
 
     resources:
+      schemas:
+        prod_bronze:
+          catalog_name: ${var.catalog}
+          name: ${var.bronze_schema}
+          comment: Raw ingestion (prod)
+        prod_silver:
+          catalog_name: ${var.catalog}
+          name: ${var.silver_schema}
+          comment: Cleaned and conformed data (prod)
+        prod_gold:
+          catalog_name: ${var.catalog}
+          name: ${var.gold_schema}
+          comment: Star schema for analytics (prod)
+
+      pipelines:
+        ticks_pipeline:
+          name: crypto-ticks-streaming-${bundle.target}
+          catalog: ${var.catalog}
+          schema: ${resources.schemas.prod_silver.name}
+          serverless: true
+          continuous: false
+          root_path: ./lakeflow_pipeline
+          libraries:
+            - glob:
+                include: ./lakeflow_pipeline/transformations/**
+          configuration:
+            catalog: ${var.catalog}
+            bronze_schema: ${resources.schemas.prod_bronze.name}
+            silver_schema: ${resources.schemas.prod_silver.name}
+          run_as:
+            service_principal_name: ${var.service_principal_name}
+
       jobs:
+        crypto_setup:
+          run_as:
+            service_principal_name: ${var.service_principal_name}
         crypto_pipeline:
           run_as:
             service_principal_name: ${var.service_principal_name}
+          tasks:
+            - task_key: ticks_pipeline
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.ticks_pipeline.id}
         producer_eventhub:
           run_as:
             service_principal_name: ${var.service_principal_name}
@@ -123,5 +162,4 @@ targets:
       bronze_schema: prod_team_crypto_bronze
       silver_schema: prod_team_crypto_silver
       gold_schema: prod_team_crypto_gold
-      agent_endpoint: crypto-assistant-dev-${workspace.current_user.short_name}
       ai_schedule_status: UNPAUSED

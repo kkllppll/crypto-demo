@@ -34,8 +34,25 @@ resources:
         - {name: bronze_schema, default: "${var.bronze_schema}"}
         - {name: silver_schema, default: "${var.silver_schema}"}
         - {name: gold_schema, default: "${var.gold_schema}"}
+      environments:
+        - environment_key: dq
+          spec:
+            environment_version: "2"
+            dependencies:
+              - PyYAML>=6,<7
       tasks:
+        - task_key: setup
+          run_job_task:
+            job_id: ${resources.jobs.crypto_setup.id}
+            job_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              silver_schema: ${var.silver_schema}
+              gold_schema: ${var.gold_schema}
+              service_principal: ${var.service_principal_name}
+
         - task_key: batch_bronze
+          depends_on: [{task_key: setup}]
           notebook_task:
             notebook_path: ../batch_pipeline/01_batch_ohlc_ingestion.ipynb
         - task_key: batch_silver
@@ -44,6 +61,7 @@ resources:
             notebook_path: ../batch_pipeline/02_silver_ohlc.ipynb
 
         - task_key: ticks_pipeline
+          depends_on: [{task_key: setup}]
           pipeline_task:
             pipeline_id: ${var.ticks_pipeline_id}
             full_refresh: false
@@ -62,3 +80,20 @@ resources:
           depends_on: [{task_key: gold_dims}]
           notebook_task:
             notebook_path: ../gold_pipeline/04_gold_fact_price_tick.ipynb
+
+        - task_key: dq_reconciliation
+          depends_on:
+            - {task_key: fact_ohlc_hourly}
+            - {task_key: fact_price_tick}
+          environment_key: dq
+          spark_python_task:
+            python_file: ../dq/dq_reconciliation.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --bronze_schema
+              - ${var.bronze_schema}
+              - --silver_schema
+              - ${var.silver_schema}
+              - --gold_schema
+              - ${var.gold_schema}

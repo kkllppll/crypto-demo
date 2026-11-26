@@ -13,8 +13,8 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
 
-catalog = config["catalog"]
-silver_schema = config["silver"]["schema"]
+catalog = spark.conf.get("catalog")
+silver_schema = spark.conf.get("silver_schema")
 quarantine_table = config["silver"]["quarantine_table"]
 validated_view = config["silver"]["validated_view"]
 

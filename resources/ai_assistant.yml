@@ -60,7 +60,17 @@ resources:
         - {name: eval_thresholds, default: ""}
         - {name: deploy, default: "true"}
       tasks:
+        - task_key: setup
+          run_job_task:
+            job_id: ${resources.jobs.crypto_setup.id}
+            job_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              silver_schema: ${var.silver_schema}
+              gold_schema: ${var.gold_schema}
+              service_principal: ${var.service_principal_name}
         - task_key: create_uc_tools
+          depends_on: [{task_key: setup}]
           notebook_task:
             notebook_path: ../ai_assistant/notebooks/03_create_uc_tools.py
         - task_key: build_knowledge_base
