@@ -4,11 +4,14 @@ from ai_assistant.utilities.settings import WIDGETS, resolve
 
 CONFIG = yaml.safe_load((Path(__file__).resolve().parents[1] / "config" / "config.yml").read_text(encoding="utf-8"))
 
+BUNDLE_PARAMS = {"catalog": "test_cat", "gold_schema": "test_gold", "silver_schema": "test_silver"}
+
 def test_defaults_come_from_config_yml():
-    s = resolve(CONFIG, {})
-    assert s.catalog == dbutils.widgets.get('catalog')
-    assert s.gold == f"{dbutils.widgets.get('catalog')}.{CONFIG['gold']['schema']}"
-    assert s.kb_table == f"{dbutils.widgets.get('catalog')}.{CONFIG['ai']['schema']}.kb_documents"
+    s = resolve(CONFIG, BUNDLE_PARAMS)
+    assert s.catalog == BUNDLE_PARAMS["catalog"]
+    assert s.gold == f"{BUNDLE_PARAMS['catalog']}.{BUNDLE_PARAMS['gold_schema']}"
+    assert s.silver == f"{BUNDLE_PARAMS['catalog']}.{BUNDLE_PARAMS['silver_schema']}"
+    assert s.kb_table == f"{BUNDLE_PARAMS['catalog']}.{CONFIG['ai']['schema']}.kb_documents"
     assert s.vector_index.endswith(".kb_documents_index")
     assert s.use_obo is True
     assert s.deploy is True
