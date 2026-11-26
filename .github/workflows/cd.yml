@@ -1,0 +1,56 @@
+
+name: Crypto Lakehouse CD
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Crypto Lakehouse CI"]
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deployment-readiness:
+    name: Deployment Readiness
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.event == 'push'
+        )
+      }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Validate DEV Bundle
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle validate -t dev
+
+      - name: Preview DEV Deployment
+        env:
+          DATABRICKS_AUTH_TYPE: azure-client-secret
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        run: databricks bundle plan -t dev
