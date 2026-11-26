@@ -92,9 +92,21 @@ targets:
   prod:
     mode: production
 
-    run_as:
-      service_principal_name: ${var.service_principal_name}
-    
+    resources:
+      jobs:
+        crypto_pipeline:
+          run_as:
+            service_principal_name: ${var.service_principal_name}
+        producer_eventhub:
+          run_as:
+            service_principal_name: ${var.service_principal_name}
+        producer_zerobus:
+          run_as:
+            service_principal_name: ${var.service_principal_name}
+        crypto_ai_assistant:
+          run_as:
+            service_principal_name: ${var.service_principal_name}
+
     permissions:
       - user_name: art.gulidov@softserve.academy
         level: CAN_MANAGE
@@ -103,7 +115,7 @@ targets:
         level: CAN_MANAGE
 
     workspace:
-      host: https://adb-7405619332572019.19.azuredatabricks.net/
+      host: https://adb-7405604651938730.10.azuredatabricks.net/
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
 
     variables:
