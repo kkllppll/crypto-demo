@@ -18,7 +18,7 @@ resources:
 
   vector_search_endpoints:
     crypto_kb:
-      name: crypto-assistant-vs-${bundle.target}
+      name: ${var.vector_search_endpoint_name}
       endpoint_type: STANDARD
 
   experiments:
@@ -60,7 +60,17 @@ resources:
         - {name: eval_thresholds, default: ""}
         - {name: deploy, default: "true"}
       tasks:
+        - task_key: setup
+          run_job_task:
+            job_id: ${resources.jobs.crypto_setup.id}
+            job_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+              silver_schema: ${var.silver_schema}
+              gold_schema: ${var.gold_schema}
+              service_principal: ${var.service_principal_name}
         - task_key: create_uc_tools
+          depends_on: [{task_key: setup}]
           notebook_task:
             notebook_path: ../ai_assistant/notebooks/03_create_uc_tools.py
         - task_key: build_knowledge_base
@@ -78,7 +88,7 @@ resources:
 
   apps:
     crypto_assistant_app:
-      name: crypto-assistant-${bundle.target}
+      name: ${var.app_name}
       description: Chat with the crypto lakehouse (gold data + docs), governed by Unity Catalog
       source_code_path: ../ai_assistant/app
       config:

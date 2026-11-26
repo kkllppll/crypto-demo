@@ -1,0 +1,41 @@
+resources:
+  jobs:
+    crypto_setup:
+      name: crypto-setup-${bundle.target}
+      description: >
+        Idempotent infra setup run by the other jobs before they start: schemas, volume,
+        Zerobus landing table, gold tables, calendar, governance and service principal access.
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      tags:
+        project: crypto-demo
+        component: setup
+      email_notifications:
+        on_failure: ${var.notification_emails}
+      parameters:
+        - {name: catalog, default: "${var.catalog}"}
+        - {name: bronze_schema, default: "${var.bronze_schema}"}
+        - {name: silver_schema, default: "${var.silver_schema}"}
+        - {name: gold_schema, default: "${var.gold_schema}"}
+        - {name: service_principal, default: "${var.service_principal_name}"}
+      tasks:
+        - task_key: infra
+          notebook_task:
+            notebook_path: ../setup/00_infra_setup.ipynb
+        - task_key: zerobus_landing
+          depends_on: [{task_key: infra}]
+          notebook_task:
+            notebook_path: ../streaming_pipeline/00_zerobus_setup.ipynb
+        - task_key: gold_tables
+          depends_on: [{task_key: infra}]
+          notebook_task:
+            notebook_path: ../gold_pipeline/00_gold_setup.ipynb
+        - task_key: dim_date
+          depends_on: [{task_key: gold_tables}]
+          notebook_task:
+            notebook_path: ../gold_pipeline/01_gold_dim_date.ipynb
+        - task_key: governance
+          depends_on: [{task_key: gold_tables}]
+          notebook_task:
+            notebook_path: ../gold_pipeline/05_governance.ipynb
