@@ -97,3 +97,5 @@ resources:
               - ${var.silver_schema}
               - --gold_schema
               - ${var.gold_schema}
+              - --config_path
+              - ${workspace.file_path}/config/config.yml
