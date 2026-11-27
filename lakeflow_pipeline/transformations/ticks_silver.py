@@ -7,10 +7,7 @@ from pyspark.sql import functions as F
 
 from utilities.ticks_transformations import RULES, parse_and_validate_ticks
 
-SCRIPT_PATH = Path(__file__).resolve()
-
-PROJECT_ROOT = SCRIPT_PATH.parents[2]
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+CONFIG_PATH = Path(spark.conf.get("config_path"))
 
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
