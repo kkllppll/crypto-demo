@@ -14,7 +14,7 @@
         "ORDER BY a.symbol"
       ],
       "catalog": "dbr_dev_ua5816bd",
-      "schema": "team_crypto_gold"
+      "schema": "prod_team_crypto_gold"
     },
     {
       "name": "hourly_candles",
@@ -41,7 +41,7 @@
         "JOIN dim_source s ON f.source_key = s.source_key"
       ],
       "catalog": "dbr_dev_ua5816bd",
-      "schema": "team_crypto_gold"
+      "schema": "prod_team_crypto_gold"
     },
     {
       "name": "daily_summary",
@@ -66,7 +66,7 @@
         "GROUP BY a.symbol, d.full_date, d.day_name, d.is_weekend"
       ],
       "catalog": "dbr_dev_ua5816bd",
-      "schema": "team_crypto_gold"
+      "schema": "prod_team_crypto_gold"
     },
     {
       "name": "live_ticks",
@@ -82,7 +82,7 @@
         "JOIN dim_date  d ON f.date_key  = d.date_key"
       ],
       "catalog": "dbr_dev_ua5816bd",
-      "schema": "team_crypto_gold"
+      "schema": "prod_team_crypto_gold"
     }
   ],
   "pages": [
