@@ -1,0 +1,9 @@
+resources:
+  dashboards:
+    crypto_prices:
+      display_name: Crypto Prices
+      file_path: ../dashboards/Crypto Prices.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.gold_schema}
+      embed_credentials: false
