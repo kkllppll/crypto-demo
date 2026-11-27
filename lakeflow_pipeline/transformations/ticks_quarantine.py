@@ -5,10 +5,7 @@ import yaml
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
-SCRIPT_PATH = Path(__file__).resolve()
-
-PROJECT_ROOT = SCRIPT_PATH.parents[2]
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+CONFIG_PATH = Path(spark.conf.get("config_path"))
 
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)

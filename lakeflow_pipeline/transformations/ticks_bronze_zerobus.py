@@ -6,10 +6,7 @@ from pyspark import pipelines as dp
 
 from utilities.zerobus_transformations import zerobus_to_bronze
 
-SCRIPT_PATH = Path(__file__).resolve()
-
-PROJECT_ROOT = SCRIPT_PATH.parents[2]
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+CONFIG_PATH = Path(spark.conf.get("config_path"))
 
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
