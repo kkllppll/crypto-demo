@@ -11,12 +11,10 @@ parser.add_argument("--catalog", required=True)
 parser.add_argument("--bronze_schema", required=True)
 parser.add_argument("--silver_schema", required=True)
 parser.add_argument("--gold_schema", required=True)
+parser.add_argument("--config_path", required=True)
 args, _ = parser.parse_known_args()
 
-SCRIPT_PATH = Path(__file__).resolve()
-
-PROJECT_ROOT = SCRIPT_PATH.parents[1]
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yml"
+CONFIG_PATH = Path(args.config_path)
 
 with open(CONFIG_PATH, "r") as f:
     config = yaml.safe_load(f)
